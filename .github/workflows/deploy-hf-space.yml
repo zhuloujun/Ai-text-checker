@@ -56,4 +56,9 @@ jobs:
           HF_ADMIN_TOKEN: ${{ secrets.HF_ADMIN_TOKEN }}
           HF_SPACE: ${{ vars.HF_SPACE }}
           GIT_SHA: ${{ github.sha }}
-        run: python .github/scripts/sync_hf_space.py
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "::warning::未设置 HF_TOKEN，已跳过同步。设置方法见仓库首页 README 的「一次性设置 A」。"
+            exit 0
+          fi
+          python .github/scripts/sync_hf_space.py

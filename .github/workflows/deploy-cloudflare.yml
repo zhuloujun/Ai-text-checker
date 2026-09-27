@@ -1,0 +1,47 @@
+# 根目录（Cloudflare 网站）有改动并推送到 main 后：检查能否打包，通过后自动部署到 Cloudflare Worker。
+# 也可以在 GitHub 的 Actions 页面手动运行（Run workflow）。
+name: 部署到 Cloudflare
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "hf-space/**"
+      - ".github/workflows/deploy-hf-space.yml"
+      - ".github/scripts/**"
+      - "**.md"
+  pull_request:
+    paths-ignore: ["hf-space/**"]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-cloudflare
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: 检查并部署
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: 打包 worker.js 并检查语法
+        run: |
+          node build.mjs
+          node --check worker.js
+          node --check pages-static/app.js
+      - name: 试打包（不会真正部署）
+        run: npx -y wrangler@4 deploy --dry-run --outdir /tmp/wrangler-out
+      - name: 部署到 Cloudflare
+        if: github.event_name != 'pull_request'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::warning::未设置 CLOUDFLARE_API_TOKEN，已跳过部署。设置方法见仓库首页 README 的「一次性设置 B」。"
+            exit 0
+          fi
+          npx -y wrangler@4 deploy

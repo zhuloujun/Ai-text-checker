@@ -4,11 +4,11 @@
 
 | 文件夹 | 是什么 | 部署到哪里 | 怎么自动部署 |
 |---|---|---|---|
-| 仓库根目录（`worker.js`、`pages-static/` 等） | 轻量版：浏览器本地统计检测 + 标点排版检查，可选接入 GPTZero | Cloudflare Worker `ai-text-checker` | Cloudflare 自动构建：`main` 分支有新提交就重新部署 |
+| 仓库根目录（`worker.js`、`pages-static/` 等） | 轻量版：浏览器本地统计检测 + 标点排版检查，可选接入 GPTZero | Cloudflare Worker `ai-text-checker` | GitHub Actions：根目录有改动时先检查，通过后部署到 Cloudflare |
 | `hf-space/` | 完整版：Fast-DetectGPT + Binoculars + MPU 中文分类器，自签发 API Key，可校准 | Hugging Face Space `tdyso/ai-text-checker` | GitHub Actions：`hf-space/` 有改动时先测试，通过后同步到 Space |
 
 ```
-你在 GitHub 上改代码 ─┬─→ Cloudflare 自动构建 ──→ Cloudflare 网站
+你在 GitHub 上改代码 ─┬─→ GitHub Actions 检查 ──→ 部署到 Cloudflare 网站
                       └─→ GitHub Actions 测试 ──→ 同步到 Hugging Face ──→ Space 自动重建
 ```
 
@@ -34,12 +34,20 @@
 
 > 想换 Space 名称：在 GitHub 仓库 Settings → Secrets and variables → Actions → **Variables** 标签页新建变量 `HF_SPACE`，值如 `tdyso/另一个名字`。
 
-### B. Cloudflare：确认自动构建已连接
+### B. Cloudflare：让 GitHub 有权限更新你的 Worker
 
-Worker `ai-text-checker` 已经通过 Cloudflare 的"导入仓库"部署。确认方法：Cloudflare 后台 → **Workers & Pages** → `ai-text-checker` → **Settings** → **Build**，应显示已连接 `zhuloujun/Ai-text-checker`、分支 `main`。
+1. **生成 Cloudflare 令牌**
+   打开 <https://dash.cloudflare.com/profile/api-tokens> → **Create Token** → 找到模板 **Edit Cloudflare Workers**，点右边 **Use template**
+   - **Account Resources**：选 Include → 你的账户
+   - **Zone Resources**：选 Include → All zones
+   - 其余不动，点 **Continue to summary** → **Create Token**，复制令牌（只显示一次）。
+2. **把令牌存进 GitHub**
+   打开 <https://github.com/zhuloujun/Ai-text-checker/settings/secrets/actions> → **New repository secret**：
+   - Name：`CLOUDFLARE_API_TOKEN`，Secret：刚才复制的令牌 → **Add secret**
+3. **第一次部署**
+   打开 <https://github.com/zhuloujun/Ai-text-checker/actions> → 左侧选 **部署到 Cloudflare** → **Run workflow**。约 1 分钟后变绿 ✓，网站即更新。
 
-- 可选：在同一页面的 **Build watch paths** 里把 `hf-space/*` 加进"排除"（Exclude），这样只改 Hugging Face 部分时 Cloudflare 不会白白重新部署。
-- 如果显示未连接：点 **Connect**，选择这个仓库和 `main` 分支，其余保持默认。
+> 没设置这个令牌时，工作流只做检查、跳过部署（显示黄色提示，不算失败）。
 
 ---
 
@@ -48,8 +56,8 @@ Worker `ai-text-checker` 已经通过 Cloudflare 的"导入仓库"部署。确�
 **在网页上改（不需要装任何软件）**：在 GitHub 打开要改的文件 → 点右上角铅笔图标 ✏️ → 修改 → **Commit changes**。几分钟后两个网站会自动更新。
 
 **看部署是否成功**：
-- Hugging Face：<https://github.com/zhuloujun/Ai-text-checker/actions>，绿色 ✓ 表示成功，红色 ✗ 点进去看哪一步出错（最常见：令牌过期 → 重新生成并更新 `HF_TOKEN`）。
-- Cloudflare：Worker 页面的 **Deployments** 标签。
+- Hugging Face：<https://github.com/zhuloujun/Ai-text-checker/actions> 里的 **部署到 Hugging Face Space**，绿色 ✓ 表示成功，红色 ✗ 点进去看哪一步出错（最常见：令牌过期 → 重新生成并更新 `HF_TOKEN`）。
+- Cloudflare：同一个 Actions 页面里的 **部署到 Cloudflare**；也可在 Cloudflare 后台 Worker 页面的 **Deployments** 标签查看。
 
 **改网页界面时注意**：Cloudflare 版的网页源文件在 `pages-static/`，部署时会自动打包成 `worker.js`，不用手动运行 `build.mjs`。
 
@@ -61,8 +69,8 @@ Worker `ai-text-checker` 已经通过 Cloudflare 的"导入仓库"部署。确�
 worker.js              Cloudflare Worker（由 build.mjs 生成，已提交一份便于在后台直接粘贴）
 worker-template.js     Worker 模板（API 转发逻辑）
 pages-static/          Cloudflare 版网页源文件
-build.mjs              打包脚本（Cloudflare 部署时自动运行）
-wrangler.toml          Cloudflare 配置（name 必须与 Worker 名一致）
+build.mjs              打包脚本（部署时自动运行）
+wrangler.toml          Cloudflare 配置（name 必须与 Worker 名一致；含账户 ID）
 hf-space/              Hugging Face 完整版（说明见 hf-space/README.md）
 .github/workflows/     自动测试与部署
 .github/scripts/       同步到 Hugging Face 的脚本
