@@ -181,6 +181,8 @@ class Engine:
             notes.append("参与计算的正文不足 300 字，结果波动较大，仅供参考。")
         if not cal.get("calibrated"):
             notes.append("尚未用你的样本校准，阈值为经验值，AI 率只宜作相对参考。")
+        elif str(cal.get("source", "")).startswith("NLPCC"):
+            notes.append("使用的是内置默认校准（公开数据集：学术摘要、新闻、作文）；用你自己的文字在管理页校准后会更贴合你的文风。")
         if sampled:
             notes.append(f"快速模式：语言模型只检测了 {len(lm_ids)} 段，其余段落仅用分类器。")
         if excluded and sum(len(x.text) for x in excluded) > 0.3 * max(1, len(text)):

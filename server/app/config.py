@@ -77,4 +77,14 @@ def load_calibration_override():
             return json.loads(CALIBRATION_FILE.read_text("utf-8")), f"文件 {CALIBRATION_FILE.name}"
         except (OSError, json.JSONDecodeError):
             pass
-    return None, "内置默认值（未校准）"
+    # 随代码发布的默认校准（由 tools/evaluate.py 用公开数据集生成）；模型不一致时不用
+    default = Path(__file__).resolve().parent / "default_calibration.json"
+    if default.exists():
+        try:
+            cal = json.loads(default.read_text("utf-8"))
+            m = cal.get("models") or {}
+            if (m.get("observer"), m.get("performer"), m.get("classifier")) == (OBSERVER_MODEL, PERFORMER_MODEL, CLASSIFIER_MODEL):
+                return cal, "内置默认校准（公开数据集 NLPCC 2025）"
+        except (OSError, json.JSONDecodeError):
+            pass
+    return None, "内置经验值（未校准）"
