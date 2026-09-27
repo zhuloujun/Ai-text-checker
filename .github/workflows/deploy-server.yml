@@ -66,12 +66,19 @@ jobs:
             echo "::error::未设置管理员密码：请在 GitHub Secrets 里添加 HF_ADMIN_TOKEN（或 ADMIN_TOKEN）。"
             exit 1
           fi
+          # 出错时把最后几行输出写进错误摘要，方便排查
+          report() {
+            MSG=$(tail -n 15 "$1" | sed -e 's/\x1b\[[0-9;]*[a-zA-Z]//g' | tr '\n' ' ' | cut -c1-1800)
+            echo "::error title=$2::$MSG"
+            exit 1
+          }
           # 管理员密码、校准参数、作废列表都从 GitHub 传给 Modal
           ARGS=("ADMIN_TOKEN=$ADMIN_TOKEN")
           [ -n "$CALIBRATION_JSON" ] && ARGS+=("CALIBRATION_JSON=$CALIBRATION_JSON")
           [ -n "$REVOKED_KEY_IDS" ] && ARGS+=("REVOKED_KEY_IDS=$REVOKED_KEY_IDS")
-          modal secret create ai-text-checker "${ARGS[@]}" --force > /dev/null
-          modal deploy modal_app.py 2>&1 | tee /tmp/deploy.log
+          modal secret create ai-text-checker "${ARGS[@]}" --force > /tmp/secret.log 2>&1 || report /tmp/secret.log "创建 Modal Secret 失败（常见原因：MODAL_TOKEN_ID / MODAL_TOKEN_SECRET 填错）"
+          modal deploy modal_app.py > /tmp/deploy.log 2>&1 || report /tmp/deploy.log "部署到 Modal 失败"
+          cat /tmp/deploy.log
           URL=$(grep -oE 'https://[a-zA-Z0-9-]+--ai-text-checker-web\.modal\.run' /tmp/deploy.log | head -1)
           if [ -n "$URL" ]; then
             echo "::notice title=检测网站地址::$URL （管理页：$URL/admin）"
