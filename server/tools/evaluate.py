@@ -62,20 +62,10 @@ def auroc(pos, neg):
     return scoring._auroc(pos, neg)
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--data", required=True)
-    ap.add_argument("--n-cal", type=int, default=900)
-    ap.add_argument("--n-test", type=int, default=600)
-    ap.add_argument("--target-fpr", type=float, default=0.05)
-    ap.add_argument("--out", default=str(ROOT))
-    args = ap.parse_args()
-
-    t0 = time.time()
+def build_samples(args):
     train = load(Path(args.data) / "train.json")
     test = load(Path(args.data) / "test_with_label.json")
-
-    # 校准集：人写样本与 AI 样本各一半；AI 样本在 3 个模型间均衡；领域中适当偏重 CSL（学术摘要）
+    # 校准集：人写与 AI 各一半；AI 在 3 个模型间均衡；领域偏重 CSL（学术摘要）
     human = [r for r in train if r["label"] == 0]
     ai = [r for r in train if r["label"] == 1]
     weights = {"csl": 0.5, "cnewsum": 0.25, "asap": 0.25}
@@ -84,39 +74,57 @@ def main():
         k = int(args.n_cal / 2 * w)
         cal_h += balanced_sample([r for r in human if r["source"] == dom], k, lambda r: r["source"], 1)
         cal_a += balanced_sample([r for r in ai if r["source"] == dom], k, lambda r: r["model"], 2)
+    cal = cal_h + cal_a
+    random.Random(7).shuffle(cal)
     test_s = balanced_sample([r for r in test if len(r["text"]) >= 150], args.n_test, lambda r: r["label"], 3)
-    # CSL 学术摘要单独再留一份（不与校准集重叠），专门看学术文字上的表现
-    used = {id(r) for r in cal_h + cal_a}
+    used = {id(r) for r in cal}
     csl_hold = balanced_sample([r for r in train if r["source"] == "csl" and id(r) not in used],
-                               min(300, args.n_test), lambda r: (r["label"], r["model"]), 4)
+                               args.n_csl, lambda r: (r["label"], r["model"]), 4)
+    half = len(cal) // 2
+    return {"cal1": cal[:half], "cal2": cal[half:], "test": test_s, "csl": csl_hold}
 
+
+def stage_score(args):
+    """打分阶段：只对其中一份样本打分，结果写到 --scores-dir/<part>.json（可在多台机器上并行）。"""
+    parts = build_samples(args)
+    rows = parts[args.part]
     engine = Engine()
     engine.load_all()
-    st = engine.status()
     if not engine.any_ready():
-        raise SystemExit(f"模型加载失败：{st}")
+        raise SystemExit(f"模型加载失败：{engine.status()}")
+    segs, labels, meta = [], [], []
+    for r in rows:
+        sg = to_segment(r["text"])
+        if sg and len(sg) >= config.SEGMENT_MIN_CHARS:
+            segs.append(sg); labels.append(r["label"]); meta.append(r.get("model") or "")
+    print(f"[{args.part}] 打分 {len(segs)} 段 …", flush=True)
+    t = time.time(); last = [0.0]
 
-    def score(rows, name):
-        segs, labels, meta = [], [], []
-        for r in rows:
-            s = to_segment(r["text"])
-            if s and len(s) >= config.SEGMENT_MIN_CHARS:
-                segs.append(s); labels.append(r["label"]); meta.append(r.get("model") or "")
-        print(f"[{name}] 打分 {len(segs)} 段 …", flush=True)
-        t = time.time()
-        last = [0.0]
+    def prog(d, n):
+        if time.time() - last[0] > 60:
+            last[0] = time.time()
+            print(f"  {d}/{n}  {time.time()-t:.0f}s", flush=True)
+    sc = engine.raw_scores(segs, prog)
+    out = [{"y": l, "model": m, "s": {k: v for k, v in x.items() if isinstance(v, (int, float))}}
+           for x, l, m in zip(sc, labels, meta)]
+    d = Path(args.scores_dir); d.mkdir(parents=True, exist_ok=True)
+    (d / f"{args.part}.json").write_text(json.dumps(out, ensure_ascii=False), "utf-8")
+    print(f"::notice title=打分完成 {args.part}::{len(out)} 段，用时 {time.time()-t:.0f} 秒", flush=True)
 
-        def prog(d, n):
-            if time.time() - last[0] > 30:
-                last[0] = time.time()
-                print(f"  {d}/{n}  {time.time()-t:.0f}s", flush=True)
-        sc = engine.raw_scores(segs, prog)
-        print(f"[{name}] 完成，用时 {time.time()-t:.0f}s", flush=True)
-        return sc, labels, meta
 
-    cal_sc, cal_y, _ = score(cal_h + cal_a, "校准集")
-    hs = [s for s, y in zip(cal_sc, cal_y) if y == 0]
-    as_ = [s for s, y in zip(cal_sc, cal_y) if y == 1]
+def stage_fit(args):
+    """拟合与评估阶段：读取各份打分结果，拟合校准参数，在没见过的测试集上评估。"""
+    d = Path(args.scores_dir)
+    parts = {}
+    for name in ("cal1", "cal2", "test", "csl"):
+        f = d / f"{name}.json"
+        if f.exists():
+            parts[name] = json.loads(f.read_text("utf-8"))
+    cal_rows = parts.get("cal1", []) + parts.get("cal2", [])
+    if not cal_rows:
+        raise SystemExit("没有校准集打分结果")
+    hs = [r["s"] for r in cal_rows if r["y"] == 0]
+    as_ = [r["s"] for r in cal_rows if r["y"] == 1]
     res = scoring.calibrate(hs, as_, args.target_fpr)
     cal = res["calibration"]
     cal["models"] = {"observer": config.OBSERVER_MODEL, "performer": config.PERFORMER_MODEL,
@@ -124,58 +132,59 @@ def main():
     cal["source"] = "NLPCC 2025 Task 1（CSL 学术摘要 / 新闻 / 作文；GPT-4o、GLM-4、Qwen）"
     cal["note"] = (f"内置默认校准：用公开数据集 NLPCC 2025 的 {len(hs)} 段人写、{len(as_)} 段 AI 文本拟合；"
                    "建议再用你自己的文字校准。")
+    out = Path(args.out)
+    (out / "app" / "default_calibration.json").write_text(json.dumps(cal, ensure_ascii=False, indent=1), "utf-8")
 
-    # 独立评估
-    def evaluate(sc, y, meta, name):
-        probs = [scoring.combine(s, cal)["prob"] for s in sc]
+    def evaluate(rows, name):
+        probs = [scoring.combine(r["s"], cal)["prob"] for r in rows]
         thr = cal["threshold"]
+        y = [r["y"] for r in rows]
         hp = [p for p, l in zip(probs, y) if l == 0 and p is not None]
         ap_ = [p for p, l in zip(probs, y) if l == 1 and p is not None]
-        out = {"name": name, "n_human": len(hp), "n_ai": len(ap_),
-               "auroc": round(auroc(ap_, hp), 4) if hp and ap_ else None,
-               "ai_caught": round(sum(p >= thr for p in ap_) / len(ap_), 4) if ap_ else None,
-               "human_flagged": round(sum(p >= thr for p in hp) / len(hp), 4) if hp else None,
-               "per_signal_auroc": {}}
+        res_ = {"name": name, "n_human": len(hp), "n_ai": len(ap_),
+                "auroc": round(auroc(ap_, hp), 4) if hp and ap_ else None,
+                "ai_caught": round(sum(p >= thr for p in ap_) / len(ap_), 4) if ap_ else None,
+                "human_flagged": round(sum(p >= thr for p in hp) / len(hp), 4) if hp else None,
+                "per_signal_auroc": {}, "ai_caught_by_model": {}}
         for k in scoring.EXTENDED_FEATURES:
-            pv = [scoring.feature_value(s, k) for s, l in zip(sc, y) if l == 1]
-            nv = [scoring.feature_value(s, k) for s, l in zip(sc, y) if l == 0]
+            pv = [scoring.feature_value(r["s"], k) for r in rows if r["y"] == 1]
+            nv = [scoring.feature_value(r["s"], k) for r in rows if r["y"] == 0]
             pv = [v for v in pv if v is not None]; nv = [v for v in nv if v is not None]
             a = auroc(pv, nv)
             if a is not None:
-                out["per_signal_auroc"][k] = round(a, 4)   # >0.5：该特征越大越像 AI；<0.5：越小越像 AI
-        by_model = {}
-        for p, l, m in zip(probs, y, meta):
-            if l == 1 and p is not None and m:
-                by_model.setdefault(m, []).append(p >= thr)
-        out["ai_caught_by_model"] = {m: round(sum(v) / len(v), 4) for m, v in by_model.items()}
-        return out
+                res_["per_signal_auroc"][k] = round(a, 4)
+        by = {}
+        for p, r in zip(probs, rows):
+            if r["y"] == 1 and p is not None and r.get("model"):
+                by.setdefault(r["model"], []).append(p >= thr)
+        res_["ai_caught_by_model"] = {m: round(sum(v) / len(v), 4) for m, v in by.items()}
+        return res_
 
-    test_sc, test_y, test_meta = score(test_s, "测试集（NLPCC 带标签测试集，含 DeepSeek-V3）")
-    csl_sc, csl_y, csl_meta = score(csl_hold, "学术摘要保留集（CSL）")
-    ev = [evaluate(test_sc, test_y, test_meta, "NLPCC 测试集（训练时未见）"),
-          evaluate(csl_sc, csl_y, csl_meta, "CSL 学术摘要保留集")]
+    ev = []
+    if parts.get("test"):
+        ev.append(evaluate(parts["test"], "NLPCC 测试集（训练时未见，含 DeepSeek-V3）"))
+    if parts.get("csl"):
+        ev.append(evaluate(parts["csl"], "CSL 学术摘要保留集"))
+    before = None
+    if parts.get("test"):
+        op = [scoring.combine(r["s"], scoring.DEFAULTS)["prob"] for r in parts["test"]]
+        yy = [r["y"] for r in parts["test"]]
+        oa = [p for p, l in zip(op, yy) if l == 1 and p is not None]
+        oh = [p for p, l in zip(op, yy) if l == 0 and p is not None]
+        before = {"ai_caught": round(sum(p >= 0.5 for p in oa) / max(1, len(oa)), 4),
+                  "human_flagged": round(sum(p >= 0.5 for p in oh) / max(1, len(oh)), 4),
+                  "auroc": round(auroc(oa, oh), 4) if oa and oh else None}
 
-    # 对照：未校准的旧默认参数在测试集上的表现
-    old = scoring.DEFAULTS
-    op = [scoring.combine(s, old)["prob"] for s in test_sc]
-    old_ai = [p for p, l in zip(op, test_y) if l == 1 and p is not None]
-    old_h = [p for p, l in zip(op, test_y) if l == 0 and p is not None]
-    before = {"ai_caught": round(sum(p >= 0.5 for p in old_ai) / max(1, len(old_ai)), 4),
-              "human_flagged": round(sum(p >= 0.5 for p in old_h) / max(1, len(old_h)), 4),
-              "auroc": round(auroc(old_ai, old_h), 4) if old_ai and old_h else None}
-
-    out = Path(args.out)
-    (out / "app" / "default_calibration.json").write_text(json.dumps(cal, ensure_ascii=False, indent=1), "utf-8")
     report = {"calibration_report": res["report"], "evaluation": ev, "before_calibration_on_test": before,
-              "elapsed_min": round((time.time() - t0) / 60, 1), "models": cal["models"],
-              "torch_threads": config.TORCH_THREADS}
+              "models": cal["models"]}
     (out / "tools" / "eval_result.json").write_text(json.dumps(report, ensure_ascii=False, indent=1), "utf-8")
-
     lines = ["# 检测效果评估报告", "",
              f"模型：{cal['models']['observer']} + {cal['models']['performer']} + {cal['models']['classifier']}",
-             f"数据：NLPCC 2025 Task 1。校准集 {res['report']['n_human']} 人写 / {res['report']['n_ai']} AI；用时 {report['elapsed_min']} 分钟。", "",
-             f"**校准前**（旧默认参数，阈值 0.5）在测试集上：AI 检出率 {before['ai_caught']:.1%}，人写误判率 {before['human_flagged']:.1%}，AUROC {before['auroc']}", "",
-             f"**校准后**：阈值 {cal['threshold']}，使用特征 {', '.join(res['report'].get('features_used') or [])}", ""]
+             f"数据：NLPCC 2025 Task 1。校准集 {res['report']['n_human']} 人写 / {res['report']['n_ai']} AI。", ""]
+    if before:
+        lines += [f"**校准前**（旧经验参数，阈值 0.5）在测试集上：AI 检出率 {before['ai_caught']:.1%}，人写误判率 {before['human_flagged']:.1%}，AUROC {before['auroc']}", ""]
+    lines += [f"**校准后**：阈值 {cal['threshold']}，特征 {', '.join(res['report'].get('features_used') or [])}；"
+              f"交叉验证 AUROC {res['report'].get('combined_auroc')}", ""]
     for e in ev:
         lines.append(f"## {e['name']}")
         lines.append(f"- AUROC {e['auroc']}；AI 检出率 {e['ai_caught']:.1%}；人写误判率 {e['human_flagged']:.1%}（{e['n_ai']} AI / {e['n_human']} 人写）")
@@ -193,8 +202,31 @@ def main():
     for e in ev:
         print(f"::notice title={e['name']}::AUROC {e['auroc']} · AI 检出率 {e['ai_caught']:.1%} · 人写误判率 {e['human_flagged']:.1%} · "
               + " · ".join(f"{m} {v:.0%}" for m, v in e["ai_caught_by_model"].items()), flush=True)
-    print(f"::notice title=校准前对照::AI 检出率 {before['ai_caught']:.1%} · 人写误判率 {before['human_flagged']:.1%} · AUROC {before['auroc']}", flush=True)
-    print("::notice title=各特征 AUROC::" + json.dumps(ev[0]["per_signal_auroc"], ensure_ascii=False), flush=True)
+    if before:
+        print(f"::notice title=校准前对照::AI 检出率 {before['ai_caught']:.1%} · 人写误判率 {before['human_flagged']:.1%} · AUROC {before['auroc']}", flush=True)
+    print("::notice title=校准报告::" + json.dumps(res["report"], ensure_ascii=False)[:3000], flush=True)
+    if ev:
+        print("::notice title=各特征 AUROC::" + json.dumps(ev[0]["per_signal_auroc"], ensure_ascii=False), flush=True)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--stage", choices=["score", "fit"], required=True)
+    ap.add_argument("--part", choices=["cal1", "cal2", "test", "csl"])
+    ap.add_argument("--data")
+    ap.add_argument("--scores-dir", default="/tmp/eval_scores")
+    ap.add_argument("--n-cal", type=int, default=800)
+    ap.add_argument("--n-test", type=int, default=400)
+    ap.add_argument("--n-csl", type=int, default=240)
+    ap.add_argument("--target-fpr", type=float, default=0.05)
+    ap.add_argument("--out", default=str(ROOT))
+    args = ap.parse_args()
+    if args.stage == "score":
+        if not args.part or not args.data:
+            raise SystemExit("--stage score 需要 --part 和 --data")
+        stage_score(args)
+    else:
+        stage_fit(args)
 
 
 if __name__ == "__main__":

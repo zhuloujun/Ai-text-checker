@@ -1,22 +1,16 @@
 # 用公开数据集（NLPCC 2025 中文 AI 文本检测）评估检测效果，并生成默认校准参数。
-# 结果写回仓库：server/app/default_calibration.json、server/tools/EVAL_REPORT.md
-# 触发：修改 server/tools/ 下的文件并推送，或在 Actions 页面手动运行。
+# 打分分成 4 份在 4 台机器上并行，最后汇总拟合；结果写回仓库：
+#   server/app/default_calibration.json、server/tools/EVAL_REPORT.md、server/tools/scores/*.json
+# 触发：修改 server/tools/ 下的 .py 文件并推送，或在 Actions 页面手动运行。
 name: 评估并生成默认校准
 
 on:
   push:
     branches: [main]
     paths:
-      - "server/tools/**"
+      - "server/tools/*.py"
       - ".github/workflows/evaluate.yml"
   workflow_dispatch:
-    inputs:
-      n_cal:
-        description: "校准集段数"
-        default: "900"
-      n_test:
-        description: "测试集段数"
-        default: "600"
 
 permissions:
   contents: write
@@ -25,10 +19,20 @@ concurrency:
   group: evaluate
   cancel-in-progress: true
 
+env:
+  N_CAL: "800"
+  N_TEST: "400"
+  N_CSL: "240"
+
 jobs:
-  evaluate:
+  score:
+    name: 打分 ${{ matrix.part }}
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [cal1, cal2, test, csl]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -50,20 +54,49 @@ jobs:
         run: python download_models.py Qwen/Qwen2.5-0.5B Qwen/Qwen2.5-0.5B-Instruct yuchuantian/AIGC_detector_zhv3
       - name: 下载数据集（NLPCC 2025 Task 1）
         run: git clone --depth 1 https://github.com/NLP2CT/NLPCC-2025-Task1 /tmp/nlpcc
-      - name: 评估并拟合校准参数
+      - name: 打分
         working-directory: server
         env:
           TORCH_THREADS: "4"
           TOKENIZERS_PARALLELISM: "false"
         run: |
-          python tools/evaluate.py --data /tmp/nlpcc/data \
-            --n-cal "${{ github.event.inputs.n_cal || '900' }}" \
-            --n-test "${{ github.event.inputs.n_test || '600' }}" \
-            --target-fpr 0.05
+          python tools/evaluate.py --stage score --part ${{ matrix.part }} --data /tmp/nlpcc/data \
+            --scores-dir /tmp/scores --n-cal $N_CAL --n-test $N_TEST --n-csl $N_CSL
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scores-${{ matrix.part }}
+          path: /tmp/scores/${{ matrix.part }}.json
+
+  fit:
+    name: 拟合与评估
+    needs: score
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install numpy
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: scores-*
+          path: /tmp/dl
+          merge-multiple: true
+      - name: 拟合校准参数并评估
+        working-directory: server
+        env:
+          OBSERVER_MODEL: Qwen/Qwen2.5-0.5B
+          PERFORMER_MODEL: Qwen/Qwen2.5-0.5B-Instruct
+          CLASSIFIER_MODEL: yuchuantian/AIGC_detector_zhv3
+        run: |
+          mkdir -p tools/scores && cp /tmp/dl/*.json tools/scores/ && ls -la tools/scores
+          python tools/evaluate.py --stage fit --scores-dir tools/scores --target-fpr 0.05
       - name: 把结果提交回仓库
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add server/app/default_calibration.json server/tools/EVAL_REPORT.md server/tools/eval_result.json
+          git add server/app/default_calibration.json server/tools/EVAL_REPORT.md server/tools/eval_result.json server/tools/scores
           git commit -m "Update default calibration from NLPCC 2025 evaluation" || exit 0
           for i in 1 2 3; do git pull --rebase origin main && git push origin HEAD:main && break; sleep 5; done
