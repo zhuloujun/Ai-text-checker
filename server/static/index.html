@@ -46,7 +46,7 @@
     </div>
   </section>
 
-  <section class="input-zone">
+  <section class="input-zone" id="inputZone">
     <div class="input-tabs">
       <button class="tab-btn active" data-tab="paste">粘贴文本</button>
       <button class="tab-btn" data-tab="upload">上传文档</button>
@@ -78,6 +78,24 @@
       <button id="analyzeBtn" class="primary-btn" disabled>开始检测</button>
     </div>
   </section>
+
+  <details class="lib-zone" id="libZone" open>
+    <summary>
+      <span class="lib-title">本地文稿库</span>
+      <span class="lib-sub">粘贴的文字、上传的文档和检测结果只保存在这台电脑的这个浏览器里，刷新页面不会丢失</span>
+    </summary>
+    <div class="lib-body">
+      <div class="lib-toolbar">
+        <label class="opt"><input type="checkbox" id="libAuto" checked> 自动保存</label>
+        <button type="button" class="ghost-btn" id="libSavePaste">把当前粘贴的文字另存为一篇</button>
+        <button type="button" class="link-btn" id="libClear">清空全部</button>
+        <span class="lib-usage muted" id="libUsage"></span>
+      </div>
+      <p class="lib-status" id="libStatus" role="status"></p>
+      <ul class="lib-list" id="libList"></ul>
+      <p class="lib-hint">不会上传到服务器；换浏览器、换电脑，或清除浏览器数据后就看不到了。公用电脑用完请点"清空全部"。最多保留最近 50 篇。</p>
+    </div>
+  </details>
 
   <section class="progress-zone hidden" id="progressZone">
     <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
@@ -125,5 +143,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="/static/app.js"></script>
+<script src="/static/library.js"></script>
 </body>
 </html>

@@ -611,3 +611,31 @@ body{
 .level-light .para-tag.strong{ color: #A88645; border-color: #A88645; }
 .notes-list{ margin: -6px 0 14px; padding-left: 18px; font-size: 12px; color: var(--amber); line-height: 1.8; }
 .notes-list:empty{ display:none; }
+
+/* ---------- 本地文稿库 ---------- */
+.lib-zone{ margin-top: 12px; background: var(--paper); border: 1px solid var(--hairline); }
+.lib-zone > summary{ list-style:none; cursor:pointer; padding: 12px 18px; display:flex; flex-wrap:wrap; gap: 4px 12px; align-items: baseline; }
+.lib-zone > summary::-webkit-details-marker{ display:none; }
+.lib-zone > summary::before{ content:'▸'; color: var(--muted); font-size: 11px; transition: transform .15s; }
+.lib-zone[open] > summary::before{ transform: rotate(90deg); }
+.lib-zone > summary:focus-visible{ outline: 2px solid var(--vermillion); outline-offset: -2px; }
+.lib-title{ font-size: 13.5px; font-weight: 500; color: var(--ink); }
+.lib-sub{ font-size: 12px; color: var(--muted); }
+.lib-body{ padding: 0 18px 14px; border-top: 1px solid var(--hairline); }
+.lib-toolbar{ display:flex; flex-wrap:wrap; align-items:center; gap: 10px 16px; padding-top: 12px; font-size: 13px; }
+.lib-toolbar .link-btn{ margin-left: 0; }
+.lib-usage{ margin-left:auto; font-size: 11.5px; font-family: var(--font-mono); }
+.lib-status{ font-size: 12px; color: var(--teal); min-height: 1.2em; margin: 8px 0 4px; }
+.lib-status.bad{ color: var(--vermillion); }
+.lib-list{ list-style:none; margin: 0; padding: 0; max-height: 280px; overflow-y: auto; }
+.lib-item{ display:flex; align-items:center; gap: 10px; border-top: 1px solid var(--hairline); padding: 6px 0; }
+.lib-item.current{ background: var(--paper-alt); }
+.lib-open{ flex:1; min-width:0; text-align:left; background:none; border:none; padding: 4px 6px; cursor:pointer; font-family: var(--font-body); }
+.lib-open:hover .lib-name{ color: var(--vermillion); }
+.lib-open:focus-visible{ outline: 2px solid var(--vermillion); }
+.lib-name{ display:block; font-size: 13px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lib-meta{ display:block; font-size: 11px; color: var(--muted); font-family: var(--font-mono); }
+.lib-badge{ font-size: 10.5px; padding: 2px 7px; border: 1px solid var(--hairline); color: var(--ink-soft); font-family: var(--font-mono); white-space: nowrap; }
+.lib-badge.wait{ color: var(--amber); border-color: var(--amber); }
+.lib-empty{ font-size: 12.5px; color: var(--muted); padding: 10px 0; }
+.lib-hint{ font-size: 11.5px; color: var(--muted); margin: 10px 0 0; line-height: 1.7; }

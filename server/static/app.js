@@ -16,7 +16,8 @@ const apiKeyInput = $('apiKeyInput'), rememberKey = $('rememberKey'), keyShowBtn
 
 let currentText = '', currentSource = '粘贴文本';
 let currentFileExt = null, currentArrayBuffer = null, currentPdfDoc = null;
-let lastResult = null, lastFormatItems = null, health = null;
+let lastResult = null, lastFormatItems = null, lastFormatNote = '', health = null;
+const Lib = ()=> window.Library;   // 本地文稿库（library.js），可能不存在
 const STORE_KEY = 'shendu_hf_key';
 
 function escapeHtml(s){
@@ -88,7 +89,7 @@ function usePaste(){
   currentFileExt = null; currentArrayBuffer = null; currentPdfDoc = null;
   updateCharCount(); syncAnalyzeState();
 }
-pasteArea.addEventListener('input', usePaste);
+pasteArea.addEventListener('input', ()=>{ usePaste(); Lib() && Lib().onPasteInput(pasteArea.value); });
 
 dropzone.addEventListener('click', (e)=>{ if(e.target.tagName!=='LABEL') fileInput.click(); });
 dropzone.addEventListener('dragover', e=>{ e.preventDefault(); dropzone.classList.add('dragover'); });
@@ -102,9 +103,11 @@ fileClear.addEventListener('click', ()=>{
   currentText = ''; currentFileExt = null; currentArrayBuffer = null; currentPdfDoc = null;
   fileInfo.classList.add('hidden'); fileInput.value = '';
   updateCharCount(); syncAnalyzeState();
+  Lib() && Lib().onFileCleared();
 });
 
-async function handleFile(file){
+async function handleFile(file, opts){
+  opts = opts || {};
   const ext = file.name.split('.').pop().toLowerCase();
   fileName.textContent = file.name;
   fileMeta.textContent = `解析中… (${(file.size/1024).toFixed(0)} KB)`;
@@ -132,11 +135,13 @@ async function handleFile(file){
       fileMeta.textContent += ' · ⚠ 提取到的文字很少，可能是扫描件，请改传 .docx';
     }
     updateCharCount();
+    if(!opts.fromLibrary && Lib()) Lib().onFileParsed(file, text);
   }catch(err){
     fileMeta.textContent = '解析失败：' + err.message;
     currentText = '';
   }
   syncAnalyzeState();
+  return currentText;
 }
 
 async function extractPdfText(buf){
@@ -216,6 +221,20 @@ async function runAnalysis(){
       headers: { 'Content-Type':'application/json', ...authHeaders() },
       body: JSON.stringify({ text, mode, exclude_references: $('optRefs').checked, flag_quotations: $('optQuotes').checked, wait: false })
     });
+    Lib() && Lib().onJobStarted(job.id);
+    await finishJob(job, text);
+  }catch(err){
+    showError(err.message);
+    if(err.jobGone && Lib()) Lib().onJobStarted(null);
+  }finally{
+    progressZone.classList.add('hidden');
+    analyzeBtn.disabled = false;
+  }
+}
+
+/* 轮询任务直到完成，然后显示结果并保存到本地文稿库（刷新页面后也能用 resumeJob 接着等） */
+async function finishJob(job, text){
+  {
     while(job.status === 'queued' || job.status === 'running'){
       if(job.status === 'queued'){
         progressLabel.textContent = `排队中（第 ${job.queue_position || 1} 位）${job.eta_sec ? ' · 预计检测' + fmtSec(job.eta_sec) : ''}`;
@@ -226,7 +245,12 @@ async function runAnalysis(){
           : '分类器检测中…';
       }
       await sleep(job.status === 'queued' ? 2000 : 1200);
-      job = await api('/v1/jobs/' + job.id, { headers: authHeaders() });
+      try{
+        job = await api('/v1/jobs/' + job.id, { headers: authHeaders() });
+      }catch(e){
+        if(e.status === 404) throw Object.assign(new Error('服务器上找不到这次检测任务（服务重启过或已超过 1 小时），请重新检测。'), { jobGone: true });
+        throw e;
+      }
     }
     if(job.status === 'error') throw new Error('检测失败：' + job.error);
 
@@ -237,8 +261,22 @@ async function runAnalysis(){
     const formatReport = await buildFormatReport(text);
     renderFormatReport(formatReport);
     resultsZone.classList.remove('hidden');
+    Lib() && Lib().onResult(lastResult, lastFormatItems, lastFormatNote);
+  }
+}
+
+/* 刷新页面后继续等待之前提交的任务 */
+async function resumeJob(jobId, text){
+  showError('');
+  analyzeBtn.disabled = true;
+  progressZone.classList.remove('hidden');
+  progressLabel.textContent = '正在接着等待刷新前提交的检测…';
+  try{
+    const job = await api('/v1/jobs/' + jobId, { headers: authHeaders() });
+    await finishJob(job, text);
   }catch(err){
-    showError(err.message);
+    showError(err.status === 404 || err.jobGone ? '刷新前提交的检测已找不到（服务重启过或已超过 1 小时），请重新检测。' : err.message);
+    Lib() && Lib().onJobStarted(null);
   }finally{
     progressZone.classList.add('hidden');
     analyzeBtn.disabled = false;
@@ -925,7 +963,14 @@ function renderFormatReport(report){
   if(!report.docx && !report.pdf){
     note += `<p class="check-extra">当前是纯文本（粘贴或 .txt），只能检查标点与空格。字体、字号、表格、隐藏文字、修订等检查需要上传 .docx（最完整）或 .pdf。</p>`;
   }
+  renderFormatItems(items, note);
+}
+
+/* 按检查项渲染（也用于从本地文稿库恢复已保存的格式检查结果） */
+function renderFormatItems(items, note){
+  note = note || '';
   lastFormatItems = items;
+  lastFormatNote = note;
 
   const danger = items.filter(i=>i.sev==='danger' && i.count).length;
   const warn = items.filter(i=>i.sev==='warn' && i.count).length;
