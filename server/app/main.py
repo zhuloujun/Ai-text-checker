@@ -20,15 +20,17 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import hmac
 import json
 import logging
+import re
 import threading
 import time
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -44,6 +46,30 @@ engine = Engine()
 jobs = JobQueue(engine)
 threading.Thread(target=engine.load_all, daemon=True).start()
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
+
+
+@app.middleware("http")
+async def _no_stale_assets(request, call_next):
+    # 让浏览器每次都向服务器确认网页和脚本是否更新（未更新时只返回 304，很快），
+    # 避免浏览器继续用旧版 app.js，导致新功能（如本地文稿库）不生效
+    resp = await call_next(request)
+    path = request.url.path
+    if path.startswith("/static/") or path in ("/", "/admin"):
+        resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
+def _versioned_html(name: str) -> HTMLResponse:
+    """给页面里引用的 /static/ 文件加上内容指纹 ?v=xxxx，文件一变浏览器就会重新下载。"""
+    html = (STATIC / name).read_text(encoding="utf-8")
+
+    def ver(m):
+        f = STATIC / m.group(1)
+        if not f.is_file():
+            return m.group(0)
+        return f'/static/{m.group(1)}?v={hashlib.sha1(f.read_bytes()).hexdigest()[:10]}"'
+    html = re.sub(r'/static/([\w.-]+)"', ver, html)
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
 
 _admin_fail: dict[str, list[float]] = {}
 
@@ -103,12 +129,12 @@ def ensure_ready():
 
 @app.get("/", include_in_schema=False)
 def index():
-    return FileResponse(STATIC / "index.html")
+    return _versioned_html("index.html")
 
 
 @app.get("/admin", include_in_schema=False)
 def admin_page():
-    return FileResponse(STATIC / "admin.html")
+    return _versioned_html("admin.html")
 
 
 @app.get("/health")

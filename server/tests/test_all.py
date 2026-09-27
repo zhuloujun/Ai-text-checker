@@ -268,6 +268,27 @@ def test_detect_sync(client):
     assert 0 <= seg["prob"] <= 1
 
 
+def test_all_quotation_falls_back_and_excluded_get_reference_value(client):
+    h = {"Authorization": "Bearer " + issue(client)}
+    # 全文都是文言：应退回为全部计入，报告有数值
+    s = client.post("/v1/detect", json={"text": CLASSICAL * 3}, headers=h).json()["result"]
+    assert s["summary"]["fallback_all_counted"] is True
+    assert s["summary"]["counted_chars"] > 0 and s["summary"]["ai_rate"] is not None
+    assert all(seg["prob"] is not None for seg in s["segments"])
+    # 正文 + 文言引文：引文不计入，但有参考值
+    r = client.post("/v1/detect", json={"text": MODERN * 2 + "\n\n" + CLASSICAL * 2}, headers=h).json()["result"]
+    assert r["summary"]["fallback_all_counted"] is False
+    q = [seg for seg in r["segments"] if seg["kind"] == "quotation"]
+    assert q and all(seg["prob"] is None and seg["ref_prob"] is not None for seg in q)
+
+
+def test_pages_versioned_and_not_cached(client):
+    r = client.get("/")
+    assert "/static/app.js?v=" in r.text and "/static/library.js?v=" in r.text
+    assert r.headers["cache-control"] == "no-cache"
+    assert client.get("/static/app.js").headers["cache-control"] == "no-cache"
+
+
 def test_detect_long_async_fast_mode(client):
     h = {"X-API-Key": issue(client)}
     doc = "\n\n".join(MODERN for _ in range(1200))   # 约 16 万字

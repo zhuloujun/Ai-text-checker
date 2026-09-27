@@ -100,19 +100,31 @@ class Engine:
                 flag_quotations: bool = True, progress=None) -> dict:
         t_start = time.time()
         segs = segment_text(text, exclude_references, flag_quotations)
+        # 全文都被判为引文/参考文献时，退回为全部计入，否则报告里没有任何数值
+        fallback_all = bool(segs) and not any(s.counted for s in segs)
+        if fallback_all:
+            for s in segs:
+                if s.kind != "body":
+                    s.notes = list(s.notes) + ["全文均被判为引文/参考文献，已改为计入"]
+                    s.kind = "body"
         counted = [s for s in segs if s.counted]
+        # 不计入的引文段落也打分，作为"参考值"显示（不影响 AI 率）；参考文献条目没有检测意义，不打分
+        ref_scored = [s for s in segs if s.kind == "quotation"]
         lm_targets = counted
         sampled = False
         if mode == "fast" and len(counted) > config.FAST_MODE_MAX_SEGMENTS:
             step = len(counted) / config.FAST_MODE_MAX_SEGMENTS
             lm_targets = [counted[int(i * step)] for i in range(config.FAST_MODE_MAX_SEGMENTS)]
             sampled = True
+        else:
+            lm_targets = counted + ref_scored
         lm_ids = {s.index for s in lm_targets}
 
         results = {s.index: {} for s in segs}
         # 分类器很快：对所有正文段落都算
-        if self.cls and self.cls.ready and counted:
-            for s, p in zip(counted, self.cls.predict([s.text for s in counted])):
+        cls_targets = counted + ref_scored
+        if self.cls and self.cls.ready and cls_targets:
+            for s, p in zip(cls_targets, self.cls.predict([s.text for s in cls_targets])):
                 results[s.index]["classifier"] = p
         # 语言模型较慢：只算正文（快速模式下抽样）
         if self.lm and self.lm.ready:
@@ -134,12 +146,15 @@ class Engine:
 
         cal = self.cal
         thr = float(cal.get("threshold", 0.5))
-        styles = {s.index: stylometry.features(s.text) for s in counted}
-        for s in counted:
+        scored = counted + ref_scored
+        styles = {s.index: stylometry.features(s.text) for s in scored}
+        for s in scored:
             results[s.index].update(style_scores(s.text, styles[s.index]))
 
-        # 1) 每段先各自打分
-        combos = {s.index: (scoring.combine(results[s.index], cal) if s.counted else {"prob": None, "signals": {}})
+        # 1) 每段先各自打分（引文段落的分数只作参考值）
+        scored_ids = {s.index for s in scored}
+        combos = {s.index: (scoring.combine(results[s.index], cal) if s.index in scored_ids
+                            else {"prob": None, "signals": {}})
                   for s in segs}
         # 2) 与相邻正文段落平滑（只在正文段落之间进行）
         body_idx = [s.index for s in counted]
@@ -163,6 +178,8 @@ class Engine:
                 "index": s.index, "start": s.start, "chars": len(s.text), "text": s.text,
                 "kind": s.kind, "notes": s.notes,
                 "prob": None if prob is None else round(prob, 4),
+                "ref_prob": (None if s.counted or combos[s.index]["prob"] is None
+                             else round(combos[s.index]["prob"], 4)),
                 "prob_unsmoothed": None if comb["prob"] is None else round(comb["prob"], 4),
                 "level": level, "label": label,
                 "signals": {k: (None if v is None else round(v, 4)) for k, v in comb["signals"].items()},
@@ -185,8 +202,12 @@ class Engine:
             notes.append("使用的是内置默认校准（公开数据集：学术摘要、新闻、作文）；用你自己的文字在管理页校准后会更贴合你的文风。")
         if sampled:
             notes.append(f"快速模式：语言模型只检测了 {len(lm_ids)} 段，其余段落仅用分类器。")
-        if excluded and sum(len(x.text) for x in excluded) > 0.3 * max(1, len(text)):
-            notes.append("超过 30% 的文字因参考文献或引文被排除，AI 率只反映其余正文。")
+        if fallback_all:
+            notes.append("全文都被识别为引文（引号对话多或文言虚词多）或参考文献，已改为全部计入计算。"
+                         "注意：检测模型主要用现代汉语训练，对文言、古籍体文字的判断不可靠。")
+        elif excluded and sum(len(x.text) for x in excluded) > 0.3 * max(1, len(text)):
+            notes.append("超过 30% 的文字因参考文献或引文被排除，AI 率只反映其余正文；"
+                         "被排除的引文段落仍给出“参考值”。如需计入，请取消勾选“引文为主的段落不计入”。")
         if not (self.lm and self.lm.ready):
             notes.append("语言模型未就绪，本次只使用了分类器。")
 
@@ -203,6 +224,7 @@ class Engine:
                 "flagged_chars": flagged_chars,
                 "chars_by_level": chars_by_level,
                 "excluded_chars": sum(len(s.text) for s in excluded),
+                "fallback_all_counted": fallback_all,
                 "excluded_reference_segments": sum(1 for s in excluded if s.kind == "reference"),
                 "excluded_quotation_segments": sum(1 for s in excluded if s.kind == "quotation"),
                 "segments": len(segs),

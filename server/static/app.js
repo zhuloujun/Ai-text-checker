@@ -333,9 +333,10 @@ function renderResult(res){
       seg.style && seg.style.template_phrases.length ? `套话：${seg.style.template_phrases.join('、')}` : ''
     ].filter(Boolean).join(' · ');
     const kindTag = seg.kind === 'reference' ? '<span class="para-tag">参考文献 · 不计入</span>'
-      : seg.kind === 'quotation' ? `<span class="para-tag">引文为主 · 不计入（${escapeHtml(seg.notes.join('；'))}）</span>` : '';
+      : seg.kind === 'quotation' ? `<span class="para-tag">引文为主 · 不计入（${escapeHtml(seg.notes.join('；'))}）${seg.ref_prob!=null ? ' · 参考值 '+pct(seg.ref_prob) : ''}</span>`
+      : (seg.notes && seg.notes.length) ? `<span class="para-tag">${escapeHtml(seg.notes.join('；'))}</span>` : '';
     div.innerHTML = `
-      <div class="para-badge">${seg.prob==null ? '—' : Math.round(seg.prob*100)}</div>
+      <div class="para-badge" ${seg.prob==null && seg.ref_prob!=null ? 'title="参考值：该段不计入 AI 率" style="opacity:.55;border-style:dashed"' : ''}>${seg.prob!=null ? Math.round(seg.prob*100) : seg.ref_prob!=null ? Math.round(seg.ref_prob*100) : '—'}</div>
       <div class="para-body">
         <div class="para-text">${escapeHtml(preview)}</div>
         <div class="para-tags">
@@ -371,7 +372,22 @@ exportBtn.addEventListener('click', ()=>{
   out += `\n${'='.repeat(60)}\n分段结果\n${'='.repeat(60)}\n`;
   lastResult.segments.forEach(seg=>{
     const tag = seg.kind === 'reference' ? '参考文献，不计入' : seg.kind === 'quotation' ? '引文为主，不计入' : (seg.label || '未达阈值');
-    out += `\n[第 ${seg.index+1} 段 | AI 概率 ${seg.prob==null?'—':pct(seg.prob)} | ${tag} | ${seg.chars} 字]\n${seg.text}\n`;
+    const probStr = seg.prob!=null ? pct(seg.prob) : seg.ref_prob!=null ? `${pct(seg.ref_prob)}（参考值，不计入）` : '—';
+    out += `\n[第 ${seg.index+1} 段 | AI 概率 ${probStr} | ${tag} | ${seg.chars} 字]\n`;
+    const sg = seg.signals || {}, r = seg.raw || {};
+    const bits = [
+      sg.classifier!=null ? `分类器 ${pct(sg.classifier)}` : (r.classifier!=null ? `分类器 ${pct(r.classifier)}` : ''),
+      r.fastdetect!=null ? `Fast-DetectGPT 曲率 ${r.fastdetect.toFixed(3)}` : '',
+      r.binoculars!=null ? `Binoculars ${r.binoculars.toFixed(3)}` : '',
+      r.ppl!=null ? `困惑度 ${Math.exp(r.ppl).toFixed(1)}` : '',
+      r.lrr!=null ? `LRR ${r.lrr.toFixed(3)}` : '',
+      r.top10!=null ? `前10名占比 ${pct(r.top10)}` : '',
+      r.lp_burstiness!=null ? `困惑度波动 ${r.lp_burstiness.toFixed(3)}` : '',
+      seg.style ? `句长变异 ${seg.style.sentence_len_cv}` : '',
+      (seg.notes && seg.notes.length) ? `备注：${seg.notes.join('；')}` : ''
+    ].filter(Boolean).join(' · ');
+    if(bits) out += `指标：${bits}\n`;
+    out += `${seg.text}\n`;
   });
   out += formatItemsToText(lastFormatItems);
   const blob = new Blob([out], { type: 'text/plain;charset=utf-8' });
