@@ -82,6 +82,7 @@ if __name__ == "__main__":
         status = getattr(getattr(e, "response", None), "status_code", "?")
         hint = {401: "令牌无效或已过期，请重新生成 HF_TOKEN。",
                 403: "令牌没有写权限：生成令牌时类型要选 Write；如果 Space 属于组织，令牌账号要有该组织的写权限。",
+                402: "Hugging Face 自 2026 年 7 月起，免费账号不能在 CPU 上托管 Docker Space，需要开通 PRO（https://huggingface.co/pro）后再运行本工作流。",
                 404: "找不到 Space 或账号，请检查 HF_SPACE 名称。"}.get(status, "")
         fail(f"Hugging Face 返回错误（HTTP {status}）：{hint} 详情：{str(e)[:400]}")
     except Exception as e:  # noqa: BLE001
