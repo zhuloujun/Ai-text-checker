@@ -1,4 +1,4 @@
-"""运行配置：全部来自环境变量（Hugging Face Space 的 Settings → Variables and secrets）。"""
+"""运行配置：全部来自环境变量（由部署平台注入：Modal 的 Secret、Hugging Face Space 的 Variables and secrets 等）。"""
 import json
 import os
 from pathlib import Path

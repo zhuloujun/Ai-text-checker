@@ -64,7 +64,7 @@ def require_key(authorization: str | None, x_api_key: str | None) -> dict:
     if not config.REQUIRE_KEY:
         return {"i": "public", "n": "public", "q": 0}
     if not keys.signing_available():
-        err(503, "not_configured", "服务尚未配置：请在 Space 的 Settings → Variables and secrets 里设置 Secret ADMIN_TOKEN，然后到 /admin 页面签发 API Key。")
+        err(503, "not_configured", "服务尚未配置管理员密码 ADMIN_TOKEN（在 GitHub 仓库 Settings → Secrets and variables → Actions 里添加 HF_ADMIN_TOKEN 后重新部署），然后到 /admin 页面签发 API Key。")
     token = (x_api_key or "").strip()
     if not token and authorization and authorization.lower().startswith("bearer "):
         token = authorization[7:].strip()
@@ -83,7 +83,7 @@ def require_admin(request: Request, token: str | None):
     if len(fails) >= 10:
         err(429, "too_many_attempts", "管理员密码错误次数过多，请 10 分钟后再试。")
     if not config.ADMIN_TOKEN:
-        err(503, "not_configured", "未设置 ADMIN_TOKEN。请在 Space 的 Settings → Variables and secrets 中新建 Secret：ADMIN_TOKEN。")
+        err(503, "not_configured", "未设置 ADMIN_TOKEN。请在 GitHub 仓库 Settings → Secrets and variables → Actions 里添加 HF_ADMIN_TOKEN 后重新部署。")
     if not token or not hmac.compare_digest(token.encode(), config.ADMIN_TOKEN.encode()):
         fails.append(now)
         _admin_fail[ip] = fails
@@ -93,7 +93,7 @@ def require_admin(request: Request, token: str | None):
 def ensure_ready():
     if not engine.any_ready():
         if engine.loading:
-            err(503, "loading", "模型正在加载（Space 刚启动或刚被唤醒时需要 1–3 分钟），请稍后重试。")
+            err(503, "loading", "模型正在加载（服务刚启动或刚被唤醒时需要约 1–3 分钟），请稍后重试。")
         err(503, "no_detector", "没有可用的检测模型，请查看 /health 里的错误信息。")
 
 
@@ -232,7 +232,7 @@ def admin_issue(body: IssueIn, request: Request, x_admin_token: str | None = Hea
 def admin_revoke(body: RevokeIn, request: Request, x_admin_token: str | None = Header(None)):
     require_admin(request, x_admin_token)
     keys.revoke_runtime(body.id.strip())
-    return {"ok": True, "message": f"已临时作废 {body.id}。要在 Space 重启后仍然有效，请把它加入变量 REVOKED_KEY_IDS。"}
+    return {"ok": True, "message": f"已临时作废 {body.id}。要在服务重启后仍然有效，请在 GitHub 仓库 Settings → Secrets and variables → Actions 的 Variables 里把它加入 REVOKED_KEY_IDS（逗号分隔），然后重新部署。"}
 
 
 @app.get("/admin/api/usage")
@@ -270,4 +270,4 @@ def admin_apply(body: CalibrationIn, request: Request, x_admin_token: str | None
         Path(config.CALIBRATION_FILE).write_text(json.dumps(cal, ensure_ascii=False, indent=2), "utf-8")
     except OSError:
         pass
-    return {"ok": True, "message": "已启用。免费 Space 重启后会恢复原设置：请把这段 JSON 保存到变量 CALIBRATION_JSON。"}
+    return {"ok": True, "message": "已启用。服务重启后会恢复原设置：请在 GitHub 仓库 Settings → Secrets and variables → Actions 的 Variables 里新建 CALIBRATION_JSON，值为这段 JSON，然后重新部署。"}

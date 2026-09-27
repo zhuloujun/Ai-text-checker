@@ -1,6 +1,6 @@
 """API 调用示例：python examples/client.py <论文.docx|.pdf|.txt>
 需要先设置环境变量：
-  ATC_URL = https://tdyso-ai-text-checker.hf.space   （你的 Space 地址）
+  ATC_URL = https://<你的 Modal 用户名>--ai-text-checker-web.modal.run   （你的服务地址）
   ATC_KEY = atc-……                                   （在 /admin 签发的 Key）
 只用到 Python 标准库。
 """

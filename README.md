@@ -1,75 +1,81 @@
 # 审读 · 论文 AI 文本检测
 
-这个仓库里有两个互相独立的网站，改完代码推送到 GitHub 后都会**自动部署**：
+这个仓库里有两个网站，改完代码推送到 GitHub 后都会**自动部署**：
 
 | 文件夹 | 是什么 | 部署到哪里 | 怎么自动部署 |
 |---|---|---|---|
-| 仓库根目录（`worker.js`、`pages-static/` 等） | 轻量版：浏览器本地统计检测 + 标点排版检查，可选接入 GPTZero | Cloudflare Worker `ai-text-checker` | Cloudflare 自动构建：`main` 分支有新提交就重新部署 |
-| `hf-space/` | 完整版：Fast-DetectGPT + Binoculars + MPU 中文分类器，自签发 API Key，可校准 | Hugging Face Space `tdyso/ai-text-checker` | GitHub Actions：`hf-space/` 有改动时先测试，通过后同步到 Space |
+| 仓库根目录（`worker.js`、`pages-static/` 等） | **轻量版**：浏览器本地统计检测 + 标点排版检查，可选接入 GPTZero | Cloudflare Worker `ai-text-checker`（免费） | Cloudflare 自动构建：`main` 分支有新提交就重新部署 |
+| `server/` | **完整版**：Fast-DetectGPT + Binoculars + MPU 中文分类器，自签发 API Key，可校准 | Modal（每月 $30 免费额度，按实际运行时间计费） | GitHub Actions：`server/` 有改动时先测试，通过后部署到 Modal |
 
 ```
-你在 GitHub 上改代码 ─┬─→ Cloudflare 自动构建 ──→ Cloudflare 网站
-                      └─→ GitHub Actions 测试 ──→ 同步到 Hugging Face ──→ Space 自动重建
+你在 GitHub 上改代码 ─┬─→ Cloudflare 自动构建 ─────────→ 轻量版网站
+                      └─→ GitHub Actions 测试 → 部署 ──→ Modal 上的完整版网站
 ```
+
+> 为什么完整版不放 Hugging Face：Hugging Face 自 2026 年 7 月起，免费账号不能再在 CPU 上托管 Docker / Gradio Space，需要 PRO 订阅（$9/月）。如果以后开通了 PRO，也可以用备用工作流部署到 Hugging Face（见文末）。
 
 ---
 
-## 一次性设置（只需做一次）
+## 一次性设置
 
-### A. Hugging Face：让 GitHub 有权限更新你的 Space
+### A. Cloudflare（轻量版）：已完成 ✓
 
-1. **生成 Hugging Face 令牌**
-   打开 <https://huggingface.co/settings/tokens> → **Create new token** → 类型选 **Write** → 名称随便填（如 `github-deploy`）→ **Create token**，复制保存（以 `hf_` 开头，只显示一次）。
-2. **把令牌存进 GitHub**
-   打开 <https://github.com/zhuloujun/Ai-text-checker/settings/secrets/actions> → **New repository secret**：
-   - Name：`HF_TOKEN`，Secret：刚才复制的令牌 → **Add secret**
-3. **设置 Space 管理员密码**（用来登录 `/admin` 签发 API Key）
-   同一页面再点 **New repository secret**：
-   - Name：`HF_ADMIN_TOKEN`，Secret：你自己定的密码（建议 20 位以上）→ **Add secret**
-4. **第一次部署**
-   打开 <https://github.com/zhuloujun/Ai-text-checker/actions> → 左侧选 **部署到 Hugging Face Space** → 右侧 **Run workflow** → **Run workflow**。
-   - 约 5 分钟后两个步骤都变成绿色 ✓。Space 会被自动创建在 `tdyso/ai-text-checker`。
-   - 然后 Hugging Face 开始构建镜像（首次约 5–15 分钟，要下载约 2 GB 模型）。可在 <https://huggingface.co/spaces/tdyso/ai-text-checker> 看进度，显示 *Running* 即完成。
-5. 打开 <https://tdyso-ai-text-checker.hf.space/admin>，输入第 3 步的密码，生成 API Key。
-
-> 想换 Space 名称：在 GitHub 仓库 Settings → Secrets and variables → Actions → **Variables** 标签页新建变量 `HF_SPACE`，值如 `tdyso/另一个名字`。
-
-### B. Cloudflare：已完成 ✓
-
-Worker `ai-text-checker` 已在 Cloudflare 后台连接本仓库（设置 → 构建 → Git 存储库），`main` 分支有新提交时 Cloudflare 会自动构建并部署，**不需要**另外设置令牌。
+Worker `ai-text-checker` 已在 Cloudflare 后台连接本仓库（设置 → 构建 → Git 存储库），`main` 分支有新提交时自动构建并部署。
 
 - 部署记录：Cloudflare 后台 → Workers 和 Pages → `ai-text-checker` → **部署** 标签。
-- 可选：在 设置 → 构建 → **构建监视路径** 的"排除路径"里填 `hf-space/**`，只改 Hugging Face 部分时 Cloudflare 就不会重复部署。
-- 如果以后页面提示"已与 Git 帐户断开连接"：点 **断开连接**，再点 **连接**，重新选择 `zhuloujun` / `Ai-text-checker` / `main`，构建命令留空，部署命令 `npx wrangler deploy`。
+- 如果以后提示"已与 Git 帐户断开连接"：到 <https://github.com/settings/installations> → **Cloudflare Workers and Pages** → **Configure**，确认仓库权限包含 `Ai-text-checker`；必要时在 Cloudflare 里点 **断开连接** 再 **连接**（构建命令留空，部署命令 `npx wrangler deploy`）。
 
-> 仓库里的"部署到 Cloudflare"GitHub Actions 工作流只做代码检查；没有设置 `CLOUDFLARE_API_TOKEN` 时会自动跳过部署（黄色提示，不是错误），不影响 Cloudflare 自己的自动部署。
+### B. Modal（完整版）
+
+1. **注册 Modal**：打开 <https://modal.com/signup>，用 GitHub 账号登录即可。
+2. **生成令牌**：登录后点左下角或右上角的 **Settings**（设置）→ **API Tokens** → **New Token**，页面会显示两串字符：
+   - `Token ID`（以 `ak-` 开头）
+   - `Token Secret`（以 `as-` 开头，只显示一次）
+3. **存进 GitHub**：打开 <https://github.com/zhuloujun/Ai-text-checker/settings/secrets/actions> → **New repository secret**，添加两个：
+   - Name `MODAL_TOKEN_ID`，Secret 填 `ak-…`
+   - Name `MODAL_TOKEN_SECRET`，Secret 填 `as-…`
+   - 管理员密码沿用已添加的 `HF_ADMIN_TOKEN`，不用再加。
+4. **第一次部署**：打开 <https://github.com/zhuloujun/Ai-text-checker/actions> → 左侧 **部署检测服务到 Modal** → **Run workflow**。
+   - 首次要构建镜像、下载约 2 GB 模型，约 10–20 分钟。
+   - 完成后，在这次运行的页面顶部（Summary）能看到网站地址，形如 `https://<你的 Modal 用户名>--ai-text-checker-web.modal.run`。
+5. 打开 `网站地址/admin`，输入 `HF_ADMIN_TOKEN` 的密码，生成 API Key。
+
+**费用**：Modal 只在服务运行时计费（8 核 CPU、12 GB 内存约 $0.47/小时）。没人访问时 10 分钟后自动关闭、不计费；下次打开自动启动（约 1 分钟加载模型）。20 万字完整检测约 $0.1，每月 $30 免费额度对个人使用绰绰有余。用量可在 Modal 的 **Settings → Usage / Billing** 页面查看。
 
 ---
 
 ## 以后怎么更新
 
-**在网页上改（不需要装任何软件）**：在 GitHub 打开要改的文件 → 点右上角铅笔图标 ✏️ → 修改 → **Commit changes**。几分钟后两个网站会自动更新。
+**在网页上改（不需要装任何软件）**：在 GitHub 打开要改的文件 → 点铅笔图标 ✏️ → 修改 → **Commit changes**。几分钟后网站会自动更新。
 
-**看部署是否成功**：
-- Hugging Face：<https://github.com/zhuloujun/Ai-text-checker/actions> 里的 **部署到 Hugging Face Space**，绿色 ✓ 表示成功，红色 ✗ 点进去看哪一步出错（最常见：令牌过期 → 重新生成并更新 `HF_TOKEN`）。
-- Cloudflare：Cloudflare 后台 Worker 页面的 **部署** 标签。
+**看部署结果**：
+- 完整版：<https://github.com/zhuloujun/Ai-text-checker/actions> 里的 **部署检测服务到 Modal**。绿色 ✓ 成功；红色 ✗ 点进去看 Summary 里的错误说明。
+- 轻量版：Cloudflare 后台 Worker 页面的 **部署** 标签。
 
-**改网页界面时注意**：Cloudflare 版的网页源文件在 `pages-static/`，部署时会自动打包成 `worker.js`，不用手动运行 `build.mjs`。
+**保存校准结果、永久作废 Key**：在 GitHub 仓库 Settings → Secrets and variables → Actions → **Variables** 标签里新建 `CALIBRATION_JSON` 或 `REVOKED_KEY_IDS`，然后在 Actions 页面重新运行一次部署。
 
 ---
 
 ## 仓库结构
 
 ```
-worker.js              Cloudflare Worker（由 build.mjs 生成，已提交一份便于在后台直接粘贴）
+worker.js              Cloudflare Worker（由 build.mjs 生成）
 worker-template.js     Worker 模板（API 转发逻辑）
-pages-static/          Cloudflare 版网页源文件
+pages-static/          轻量版网页源文件
 build.mjs              打包脚本（部署时自动运行）
-wrangler.toml          Cloudflare 配置（name 必须与 Worker 名一致；含账户 ID）
-hf-space/              Hugging Face 完整版（说明见 hf-space/README.md）
-.github/workflows/     自动测试与部署
-.github/scripts/       同步到 Hugging Face 的脚本
+wrangler.toml          Cloudflare 配置（name 必须与 Worker 名一致）
+server/                完整版检测服务（说明见 server/README.md）
+  modal_app.py         Modal 部署配置
+  Dockerfile           Docker / Hugging Face 部署用
+.github/workflows/
+  deploy-server.yml        测试并部署完整版到 Modal
+  deploy-cloudflare.yml    检查轻量版代码（部署由 Cloudflare 自动完成）
+  deploy-hf-space.yml      （备用，手动运行）部署到 Hugging Face，需要 PRO
 ```
+
+### 备用：部署到 Hugging Face
+
+需要 Hugging Face PRO。已设置的 `HF_TOKEN`、`HF_ADMIN_TOKEN` 可直接使用：Actions 页面 → **（备用）部署到 Hugging Face Space** → **Run workflow**。
 
 ---
 

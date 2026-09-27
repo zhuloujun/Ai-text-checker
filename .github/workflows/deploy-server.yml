@@ -1,0 +1,79 @@
+# 修改 server/ 并推送到 main 后：先跑测试，通过后自动部署到 Modal。
+# 也可以在 GitHub 的 Actions 页面手动运行（Run workflow）。
+name: 部署检测服务到 Modal
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "server/**"
+      - ".github/workflows/deploy-server.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-server
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: 测试
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: server/requirements.txt
+      - name: 安装依赖
+        run: |
+          pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install -r server/requirements.txt pytest httpx
+      - name: 运行测试（用随机小模型检查流程与公式）
+        working-directory: server
+        run: |
+          python tests/make_tiny_models.py /tmp/tiny
+          TEST_MODELS_DIR=/tmp/tiny python -m pytest -q
+      - name: 检查网页脚本语法
+        run: node --check server/static/app.js && node --check server/static/admin.js
+
+  deploy:
+    name: 部署到 Modal
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install "modal==1.5.5"
+      - name: 部署
+        working-directory: server
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN || secrets.HF_ADMIN_TOKEN }}
+          CALIBRATION_JSON: ${{ vars.CALIBRATION_JSON }}
+          REVOKED_KEY_IDS: ${{ vars.REVOKED_KEY_IDS }}
+        run: |
+          if [ -z "$MODAL_TOKEN_ID" ] || [ -z "$MODAL_TOKEN_SECRET" ]; then
+            echo "::warning::未设置 MODAL_TOKEN_ID / MODAL_TOKEN_SECRET，已跳过部署。设置方法见仓库首页 README。"
+            exit 0
+          fi
+          if [ -z "$ADMIN_TOKEN" ]; then
+            echo "::error::未设置管理员密码：请在 GitHub Secrets 里添加 HF_ADMIN_TOKEN（或 ADMIN_TOKEN）。"
+            exit 1
+          fi
+          # 管理员密码、校准参数、作废列表都从 GitHub 传给 Modal
+          ARGS=("ADMIN_TOKEN=$ADMIN_TOKEN")
+          [ -n "$CALIBRATION_JSON" ] && ARGS+=("CALIBRATION_JSON=$CALIBRATION_JSON")
+          [ -n "$REVOKED_KEY_IDS" ] && ARGS+=("REVOKED_KEY_IDS=$REVOKED_KEY_IDS")
+          modal secret create ai-text-checker "${ARGS[@]}" --force > /dev/null
+          modal deploy modal_app.py 2>&1 | tee /tmp/deploy.log
+          URL=$(grep -oE 'https://[a-zA-Z0-9-]+--ai-text-checker-web\.modal\.run' /tmp/deploy.log | head -1)
+          if [ -n "$URL" ]; then
+            echo "::notice title=检测网站地址::$URL （管理页：$URL/admin）"
+            echo "### 部署完成：[$URL]($URL)  ·  管理页：[$URL/admin]($URL/admin)" >> "$GITHUB_STEP_SUMMARY"
+          fi

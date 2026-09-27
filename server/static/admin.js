@@ -102,7 +102,7 @@ $('calBtn').addEventListener('click', async ()=>{
         <button class="primary-btn" id="applyBtn">立即启用</button>
         <button class="ghost-btn" id="copyCal">复制 JSON</button>
       </div>
-      <p class="msg">要永久保存：在 Space 的 Settings → Variables and secrets 新建变量 <code>CALIBRATION_JSON</code>，值粘贴上面这段 JSON。</p>`;
+      <p class="msg">要永久保存：在 GitHub 仓库 Settings → Secrets and variables → Actions 的 <b>Variables</b> 里新建 <code>CALIBRATION_JSON</code>，值粘贴上面这段 JSON，然后重新部署。</p>`;
     $('applyBtn').addEventListener('click', async ()=>{
       try{ const d = await call('/admin/api/calibration', { method:'POST', body: JSON.stringify({ calibration }) }); msg(m, d.message, true); }
       catch(e){ msg(m, e.message, false); }

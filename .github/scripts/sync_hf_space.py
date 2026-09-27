@@ -1,4 +1,4 @@
-"""把仓库里的 hf-space/ 文件夹同步到 Hugging Face Space（由 GitHub Actions 调用）。
+"""把仓库里的 server/ 文件夹同步到 Hugging Face Space（由 GitHub Actions 调用）。
 
 - Space 不存在时自动创建（Docker 类型、免费 CPU）
 - 如果提供了 HF_ADMIN_TOKEN，同步写入 Space 的 Secret：ADMIN_TOKEN
@@ -17,7 +17,7 @@ from pathlib import Path
 from huggingface_hub import CommitOperationAdd, CommitOperationDelete, HfApi
 from huggingface_hub.utils import HfHubHTTPError
 
-SRC = Path(__file__).resolve().parents[2] / "hf-space"
+SRC = Path(__file__).resolve().parents[2] / "server"
 SKIP_DIRS = {"__pycache__", ".pytest_cache", ".git"}
 
 

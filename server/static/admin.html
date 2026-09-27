@@ -37,7 +37,7 @@
 
   <section class="card">
     <h2>管理员登录</h2>
-    <p class="hint">输入你在 Space 的 Settings → Variables and secrets 里设置的 Secret <code>ADMIN_TOKEN</code>。密码只保存在这个页面的内存里，刷新后需重新输入。</p>
+    <p class="hint">输入你在 GitHub 仓库 Secrets 里设置的 <code>HF_ADMIN_TOKEN</code>（即服务的管理员密码 <code>ADMIN_TOKEN</code>）。密码只保存在这个页面的内存里，刷新后需重新输入。</p>
     <div class="form-row">
       <label style="flex:1">管理员密码<input type="password" id="adminToken" autocomplete="current-password"></label>
       <button class="primary-btn" id="loginBtn">登录</button>
@@ -47,7 +47,7 @@
 
   <section class="card needs-login">
     <h2>签发 API Key</h2>
-    <p class="hint">Key 自带签名，Space 重启后仍然有效；Key 只在这里显示一次，请立即保存。<br>改动 <code>ADMIN_TOKEN</code>（或 <code>KEY_SECRET</code>）会让之前签发的所有 Key 失效。</p>
+    <p class="hint">Key 自带签名，服务重启后仍然有效；Key 只在这里显示一次，请立即保存。<br>改动 <code>ADMIN_TOKEN</code>（或 <code>KEY_SECRET</code>）会让之前签发的所有 Key 失效。</p>
     <div class="form-row">
       <label style="flex:1">名称（备注）<input id="keyName" placeholder="例如：我的电脑 / Cloudflare 网站"></label>
       <label>有效天数（0 = 永久）<input id="keyDays" type="number" min="0" value="0" style="width:120px"></label>
@@ -59,7 +59,7 @@
 
   <section class="card needs-login">
     <h2>用量与作废</h2>
-    <p class="hint">用量只记在内存里，Space 重启后清零。作废会立即生效，但要在重启后仍然有效，请把 Key 编号加入变量 <code>REVOKED_KEY_IDS</code>（多个用英文逗号分隔）。</p>
+    <p class="hint">用量只记在内存里，服务重启后清零。作废会立即生效；要在重启后仍然有效，请在 GitHub 仓库 Settings → Secrets and variables → Actions 的 <b>Variables</b> 里把 Key 编号加入 <code>REVOKED_KEY_IDS</code>（多个用英文逗号分隔），然后重新部署。</p>
     <div class="form-row">
       <button class="ghost-btn" id="usageBtn">刷新用量</button>
       <label style="flex:1">要作废的 Key 编号<input id="revokeId" placeholder="8 位编号，例如 1a2b3c4d"></label>

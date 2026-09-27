@@ -90,7 +90,7 @@ def revoke_runtime(kid: str):
 
 
 def consume(payload: dict, chars: int) -> tuple[bool, int]:
-    """记录用量；超出每日额度返回 (False, 剩余)。用量只保存在内存里，Space 重启后清零。"""
+    """记录用量；超出每日额度返回 (False, 剩余)。用量只保存在内存里，服务重启后清零。"""
     kid = payload["i"]
     quota = int(payload.get("q") or config.DEFAULT_DAILY_CHARS)
     day = time.strftime("%Y-%m-%d", time.gmtime())

@@ -12,9 +12,9 @@ short_description: 中文论文 AI 文本检测：Fast-DetectGPT + Binoculars + 
 
 # 审读 · 中文论文 AI 文本检测（自部署版）
 
-> 本 Space 由 GitHub 仓库 [zhuloujun/Ai-text-checker](https://github.com/zhuloujun/Ai-text-checker) 的 `hf-space/` 文件夹自动同步，请在 GitHub 上修改代码，不要直接改这里的文件（会被下次同步覆盖）。
+> 代码在 GitHub 仓库 [zhuloujun/Ai-text-checker](https://github.com/zhuloujun/Ai-text-checker) 的 `server/` 文件夹。默认通过 GitHub Actions 自动部署到 **Modal**（见仓库首页 README）；也可以部署到 Hugging Face（需要 PRO）或任何能运行 Docker 的服务器。
 
-部署在你自己的 Hugging Face Space 上，免费 CPU 即可运行；自己签发 API Key，不依赖任何付费检测服务。
+部署在你自己的服务器上（默认 Modal），自己签发 API Key，不依赖任何付费检测服务。
 
 ## 它怎么判断
 
@@ -38,9 +38,11 @@ short_description: 中文论文 AI 文本检测：Fast-DetectGPT + Binoculars + 
 
 ---
 
-## 部署到 Hugging Face
+## 部署到 Hugging Face（需要 PRO 订阅）
 
-> **推荐：用 GitHub 自动部署。** 本项目在 GitHub 仓库 [zhuloujun/Ai-text-checker](https://github.com/zhuloujun/Ai-text-checker) 的 `hf-space/` 文件夹里，按仓库首页 README 的"一次性设置"操作后，每次修改都会自动测试并同步到 Space。下面是不经过 GitHub、手动上传的方法。
+> Hugging Face 自 2026 年 7 月起，免费账号不能在 CPU 上托管 Docker Space。推荐改用 Modal（见仓库首页 README）。
+
+> 开通 PRO 后，最简单的方法是在 GitHub Actions 页面手动运行 **（备用）部署到 Hugging Face Space**。下面是不经过 GitHub、手动上传的方法。
 
 
 1. 登录 Hugging Face，打开 <https://huggingface.co/new-space>

@@ -6,12 +6,13 @@ on:
   push:
     branches: [main]
     paths-ignore:
-      - "hf-space/**"
+      - "server/**"
       - ".github/workflows/deploy-hf-space.yml"
+      - ".github/workflows/deploy-server.yml"
       - ".github/scripts/**"
       - "**.md"
   pull_request:
-    paths-ignore: ["hf-space/**"]
+    paths-ignore: ["server/**"]
   workflow_dispatch:
 
 concurrency:
