@@ -32,7 +32,13 @@ def main():
         who = api.whoami()
     except HfHubHTTPError as e:
         sys.exit(f"HF_TOKEN 无效或已过期：{e}")
-    print(f"已登录 Hugging Face：{who.get('name')}")
+    name = who.get("name") if isinstance(who, dict) else getattr(who, "name", "?")
+    print(f"已登录 Hugging Face：{name}")
+    owner = space.split("/")[0]
+    orgs = [o.get("name") for o in (who.get("orgs") or [])] if isinstance(who, dict) else []
+    if owner != name and owner not in orgs:
+        sys.exit(f"令牌属于账号 {name}，但目标 Space 在 {owner} 名下。请用 {owner} 账号生成令牌，"
+                 f"或在 GitHub 变量 HF_SPACE 里改成 {name}/ai-text-checker。")
 
     api.create_repo(space, repo_type="space", space_sdk="docker", exist_ok=True)
     print(f"Space：https://huggingface.co/spaces/{space}")
@@ -59,5 +65,24 @@ def main():
     print(f"Space 会自动重新构建（约 5–15 分钟）。网页：https://{space.replace('/', '-').replace('_', '-').lower()}.hf.space")
 
 
+def fail(msg: str):
+    # ::error:: 会显示在 GitHub Actions 页面的错误摘要里
+    print(f"::error::{msg}", flush=True)
+    sys.exit(1)
+
+
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit as e:
+        if isinstance(e.code, str):
+            fail(e.code)
+        raise
+    except HfHubHTTPError as e:
+        status = getattr(getattr(e, "response", None), "status_code", "?")
+        hint = {401: "令牌无效或已过期，请重新生成 HF_TOKEN。",
+                403: "令牌没有写权限：生成令牌时类型要选 Write；如果 Space 属于组织，令牌账号要有该组织的写权限。",
+                404: "找不到 Space 或账号，请检查 HF_SPACE 名称。"}.get(status, "")
+        fail(f"Hugging Face 返回错误（HTTP {status}）：{hint} 详情：{str(e)[:400]}")
+    except Exception as e:  # noqa: BLE001
+        fail(f"{type(e).__name__}: {str(e)[:500]}")
