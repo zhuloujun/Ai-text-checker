@@ -1,0 +1,98 @@
+{
+ "calibration_report": {
+  "n_human": 392,
+  "n_ai": 396,
+  "auroc": {
+   "fastdetect": 0.929,
+   "binoculars": 0.9366,
+   "classifier": 0.9989,
+   "fastdetect_norm": 0.9414,
+   "lrr": 0.8418,
+   "log_rank": 0.8203,
+   "entropy": 0.7063,
+   "top10": 0.826,
+   "lp_burstiness": 0.6239,
+   "style_cv": 0.8538,
+   "style_phrases": 0.745
+  },
+  "features_used": [
+   "fastdetect",
+   "binoculars",
+   "logit_classifier",
+   "fastdetect_norm",
+   "lrr",
+   "log_rank",
+   "entropy",
+   "top10",
+   "lp_burstiness",
+   "style_cv",
+   "style_phrases"
+  ],
+  "cross_validated": true,
+  "combined_auroc": 0.9993,
+  "threshold": 0.5,
+  "human_flagged_rate": 0.023,
+  "ai_caught_rate": 0.9848,
+  "note": "以上指标用 5 折交叉验证（每次用没参与拟合的样本）算出；样本越多、越接近你要检测的文本，越可信。"
+ },
+ "evaluation": [
+  {
+   "name": "NLPCC 测试集（训练时未见，含 DeepSeek-V3）",
+   "n_human": 183,
+   "n_ai": 197,
+   "auroc": 0.975,
+   "ai_caught": 0.9086,
+   "human_flagged": 0.0328,
+   "per_signal_auroc": {
+    "fastdetect": 0.8535,
+    "binoculars": 0.1447,
+    "logit_classifier": 0.9733,
+    "fastdetect_norm": 0.8539,
+    "lrr": 0.8526,
+    "log_rank": 0.169,
+    "entropy": 0.2171,
+    "top10": 0.8663,
+    "lp_burstiness": 0.8566,
+    "style_cv": 0.2225,
+    "style_phrases": 0.514
+   },
+   "ai_caught_by_model": {}
+  },
+  {
+   "name": "CSL 学术摘要保留集",
+   "n_human": 60,
+   "n_ai": 180,
+   "auroc": 1.0,
+   "ai_caught": 1.0,
+   "human_flagged": 0.0,
+   "per_signal_auroc": {
+    "fastdetect": 0.9662,
+    "binoculars": 0.0361,
+    "logit_classifier": 0.9997,
+    "fastdetect_norm": 0.9641,
+    "lrr": 0.9775,
+    "log_rank": 0.0315,
+    "entropy": 0.1517,
+    "top10": 0.9758,
+    "lp_burstiness": 0.5981,
+    "style_cv": 0.215,
+    "style_phrases": 0.8453
+   },
+   "ai_caught_by_model": {
+    "glm": 1.0,
+    "gpt4o": 1.0,
+    "qwen": 1.0
+   }
+  }
+ ],
+ "before_calibration_on_test": {
+  "ai_caught": 0.7665,
+  "human_flagged": 0.071,
+  "auroc": 0.9412
+ },
+ "models": {
+  "observer": "Qwen/Qwen2.5-0.5B",
+  "performer": "Qwen/Qwen2.5-0.5B-Instruct",
+  "classifier": "yuchuantian/AIGC_detector_zhv3"
+ }
+}
