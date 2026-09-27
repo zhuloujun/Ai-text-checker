@@ -44,10 +44,26 @@ def signal_prob(name: str, value, cal: dict):
     return _sigmoid(s["direction"] * (value - s["center"]) / s["scale"])
 
 
-def features_of(scores: dict):
-    """逻辑回归使用的特征：Fast-DetectGPT 原值、Binoculars 原值、分类器概率的 logit。"""
-    fd, bi, cl = scores.get("fastdetect"), scores.get("binoculars"), scores.get("classifier")
-    return [fd, bi, None if cl is None else _logit(cl)]
+# 逻辑回归可用的特征。BASE 在样本少时使用；样本足够多（每类 ≥ 30 段）时使用 EXTENDED。
+BASE_FEATURES = ["fastdetect", "binoculars", "logit_classifier"]
+EXTENDED_FEATURES = BASE_FEATURES + [
+    "fastdetect_norm", "lrr", "log_rank", "entropy", "top10", "lp_burstiness",
+    "style_cv", "style_phrases",
+]
+_LEGACY_NAMES = {"logit(classifier)": "logit_classifier"}
+
+
+def feature_value(scores: dict, name: str):
+    name = _LEGACY_NAMES.get(name, name)
+    if name == "logit_classifier":
+        cl = scores.get("classifier")
+        return None if cl is None else _logit(cl)
+    v = scores.get(name)
+    return None if v is None else float(v)
+
+
+def features_of(scores: dict, names=None):
+    return [feature_value(scores, n) for n in (names or BASE_FEATURES)]
 
 
 def combine(scores: dict, cal: dict) -> dict:
@@ -55,7 +71,7 @@ def combine(scores: dict, cal: dict) -> dict:
     per = {k: signal_prob(k, scores.get(k), cal) for k in SIGNALS}
     lr = cal.get("lr")
     if lr:
-        feats = features_of(scores)
+        feats = features_of(scores, lr.get("features") or BASE_FEATURES)
         z, used = lr["b"], 0
         for i, f in enumerate(feats):
             if f is None:
@@ -134,27 +150,66 @@ def calibrate(human: list[dict], ai: list[dict], target_fpr: float = 0.05) -> di
         au = _auroc(as_, hs)
         report["auroc"][k] = round(au if direction == 1 else 1 - au, 4)
 
-    # 2) 组合：逻辑回归（特征标准化后拟合）
+    # 2) 组合：逻辑回归。每类 ≥ 30 段时使用扩展特征，否则只用三个主信号。
     import numpy as np
-    rows, ys = [], []
-    for y, group in ((0, human), (1, ai)):
-        for s in group:
-            f = features_of(s)
-            if all(v is not None for v in f):
-                rows.append(f); ys.append(y)
-    if len(rows) >= 10 and len(set(ys)) == 2:
-        Xa = np.asarray(rows, dtype=float)
-        mean, std = Xa.mean(0), Xa.std(0) + 1e-9
-        w, b = _fit_logreg(((Xa - mean) / std).tolist(), ys)
-        cal["lr"] = {"w": w, "b": b, "mean": mean.tolist(), "std": std.tolist(),
-                     "features": ["fastdetect", "binoculars", "logit(classifier)"]}
+    n_each = min(len(human), len(ai))
+    candidates = EXTENDED_FEATURES if n_each >= 30 else BASE_FEATURES
+    all_rows = [(features_of(s, candidates), 0) for s in human] + [(features_of(s, candidates), 1) for s in ai]
+    # 丢掉缺失太多的特征（例如没有语言模型时的那些）
+    names = [n for j, n in enumerate(candidates)
+             if sum(r[j] is not None for r, _ in all_rows) >= 0.9 * len(all_rows)]
+    for j, n in enumerate(candidates):
+        if n in EXTENDED_FEATURES and n not in BASE_FEATURES:
+            hv = [r[j] for r, y in all_rows if y == 0 and r[j] is not None]
+            av = [r[j] for r, y in all_rows if y == 1 and r[j] is not None]
+            au = _auroc(av, hv)
+            if au is not None:
+                report["auroc"][n] = round(max(au, 1 - au), 4)
+    idx = [candidates.index(n) for n in names]
+    X, ys = [], []
+    for r, y in all_rows:
+        vals = [r[j] for j in idx]
+        if sum(v is None for v in vals) <= 1:
+            X.append(vals); ys.append(y)
+    if names and len(X) >= 10 and len(set(ys)) == 2:
+        Xa = np.array([[np.nan if v is None else v for v in row] for row in X], dtype=float)
+        mean = np.nanmean(Xa, 0)
+        Xa = np.where(np.isnan(Xa), mean, Xa)
+        std = Xa.std(0) + 1e-9
+        Z = (Xa - mean) / std
+        ya = np.asarray(ys)
+        l2 = 1.0 if len(names) <= 3 else 3.0
+        w, b = _fit_logreg(Z.tolist(), ys, l2=l2)
+        cal["lr"] = {"w": w, "b": b, "mean": mean.tolist(), "std": std.tolist(), "features": names}
+        report["features_used"] = names
+        # 5 折交叉验证：用"没见过的样本"上的预测来评估和选阈值，避免过于乐观
+        oof = np.full(len(ya), np.nan)
+        if len(ya) >= 20:
+            rng = np.random.default_rng(0)
+            order = rng.permutation(len(ya))
+            folds = np.array_split(order, 5)
+            for f in folds:
+                tr = np.setdiff1d(order, f)
+                if len(set(ya[tr])) < 2:
+                    continue
+                wf, bf = _fit_logreg(Z[tr].tolist(), ya[tr].tolist(), l2=l2)
+                oof[f] = 1 / (1 + np.exp(-(Z[f] @ np.asarray(wf) + bf)))
+        cv_ok = not np.isnan(oof).any()
+        report["cross_validated"] = bool(cv_ok)
+        if cv_ok:
+            hp = sorted(oof[ya == 0].tolist())
+            ap = oof[ya == 1].tolist()
+        else:
+            hp = sorted(combine(s, cal)["prob"] for s in human if combine(s, cal)["prob"] is not None)
+            ap = [combine(s, cal)["prob"] for s in ai if combine(s, cal)["prob"] is not None]
+    else:
+        hp = sorted(p for p in (combine(s, cal)["prob"] for s in human) if p is not None)
+        ap = [p for p in (combine(s, cal)["prob"] for s in ai) if p is not None]
 
     # 3) 阈值：让人写文本的误判率不超过 target_fpr
-    hp = sorted(p for p in (combine(s, cal)["prob"] for s in human) if p is not None)
-    ap = [p for p in (combine(s, cal)["prob"] for s in ai) if p is not None]
     if hp:
-        idx = min(len(hp) - 1, max(0, math.ceil(len(hp) * (1 - target_fpr)) - 1))
-        thr = max(0.5, hp[idx] + 1e-6)
+        k = min(len(hp) - 1, max(0, math.ceil(len(hp) * (1 - target_fpr)) - 1))
+        thr = max(0.5, hp[k] + 1e-6)
     else:
         thr = 0.5
     cal["threshold"] = round(min(thr, 0.99), 4)
@@ -164,7 +219,45 @@ def calibrate(human: list[dict], ai: list[dict], target_fpr: float = 0.05) -> di
     report["threshold"] = cal["threshold"]
     report["human_flagged_rate"] = None if fpr is None else round(fpr, 4)
     report["ai_caught_rate"] = None if tpr is None else round(tpr, 4)
-    report["note"] = "以上指标是在你提供的校准样本上算出的，样本越多、越接近你要检测的文本，越可信。"
+    report["note"] = ("以上指标" + ("用 5 折交叉验证（每次用没参与拟合的样本）算出" if report.get("cross_validated") else "是在校准样本上直接算出的，可能偏乐观")
+                      + "；样本越多、越接近你要检测的文本，越可信。")
     cal["calibrated"] = True
     cal["note"] = f"已用 {len(human)} 段人写文本、{len(ai)} 段 AI 文本校准。"
     return {"calibration": cal, "report": report}
+
+
+# ---------------- 相邻段落平滑与分级 ----------------
+
+def smooth(probs: list, strength: float) -> list:
+    """在 logit 空间里把每段的概率与前后段落做加权平均（参考 Turnitin 的滑动窗口做法），
+    减少孤立段落的偶然误判。strength=0 表示不平滑。None 保持不变。"""
+    if strength <= 0 or len(probs) < 2:
+        return list(probs)
+    z = [None if p is None else _logit(p) for p in probs]
+    out = []
+    for i, zi in enumerate(z):
+        if zi is None:
+            out.append(None)
+            continue
+        nb = [v for v in (z[i - 1] if i > 0 else None, z[i + 1] if i + 1 < len(z) else None) if v is not None]
+        if not nb:
+            out.append(probs[i])
+            continue
+        zn = sum(nb) / len(nb)
+        out.append(_sigmoid((1 - strength) * zi + strength * zn))
+    return out
+
+
+LEVELS = (("high", "高度疑似", 0.80), ("mid", "中度疑似", 0.65), ("light", "轻度疑似", 0.0))
+
+
+def level_of(prob, threshold: float):
+    """返回 (level, 中文标签)。低于阈值为 low。"""
+    if prob is None:
+        return "none", ""
+    if prob < threshold:
+        return "low", ""
+    for key, label, lower in LEVELS:
+        if prob >= max(threshold, lower):
+            return key, label
+    return "light", "轻度疑似"

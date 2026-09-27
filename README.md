@@ -4,13 +4,18 @@
 
 | 文件夹 | 是什么 | 部署到哪里 | 怎么自动部署 |
 |---|---|---|---|
-| 仓库根目录（`worker.js`、`pages-static/` 等） | **轻量版**：浏览器本地统计检测 + 标点排版检查，可选接入 GPTZero | Cloudflare Worker `ai-text-checker`（免费） | Cloudflare 自动构建：`main` 分支有新提交就重新部署 |
-| `server/` | **完整版**：Fast-DetectGPT + Binoculars + MPU 中文分类器，自签发 API Key，可校准 | Modal（每月 $30 免费额度，按实际运行时间计费） | GitHub Actions：`server/` 有改动时先测试，通过后部署到 Modal |
+| 仓库根目录（`worker.js`、`pages-static/` 等） | **网站入口**：把你的域名转发到完整版；`/lite/` 下保留轻量版（浏览器本地统计检测 + 标点排版检查，可选 GPTZero） | Cloudflare Worker `ai-text-checker`（免费） | Cloudflare 自动构建：`main` 分支有新提交就重新部署 |
+| `server/` | **完整版检测服务**：Fast-DetectGPT + Binoculars + MPU 中文分类器 + 扩展特征，自签发 API Key，可校准 | Modal（按实际运行时间计费，有免费额度） | GitHub Actions：`server/` 有改动时先测试，通过后部署到 Modal |
 
 ```
-你在 GitHub 上改代码 ─┬─→ Cloudflare 自动构建 ─────────→ 轻量版网站
-                      └─→ GitHub Actions 测试 → 部署 ──→ Modal 上的完整版网站
+访客 ──→ 你的域名（Cloudflare Worker）──┬─ /lite/ ──→ 轻量版（Worker 自己提供）
+                                        └─ 其他 ───→ 转发到 Modal 上的完整版检测服务
+
+你在 GitHub 上改代码 ─┬─→ Cloudflare 自动构建 ─→ Worker
+                      └─→ GitHub Actions 测试 → 部署 ─→ Modal
 ```
+
+Worker 转发的目标地址写在 `wrangler.toml` 的 `BACKEND_URL`。删掉那两行，Worker 就恢复为只提供轻量版。
 
 > 为什么完整版不放 Hugging Face：Hugging Face 自 2026 年 7 月起，免费账号不能再在 CPU 上托管 Docker / Gradio Space，需要 PRO 订阅（$9/月）。如果以后开通了 PRO，也可以用备用工作流部署到 Hugging Face（见文末）。
 
@@ -24,6 +29,10 @@ Worker `ai-text-checker` 已在 Cloudflare 后台连接本仓库（设置 → �
 
 - 部署记录：Cloudflare 后台 → Workers 和 Pages → `ai-text-checker` → **部署** 标签。
 - 如果以后提示"已与 Git 帐户断开连接"：到 <https://github.com/settings/installations> → **Cloudflare Workers and Pages** → **Configure**，确认仓库权限包含 `Ai-text-checker`；必要时在 Cloudflare 里点 **断开连接** 再 **连接**（构建命令留空，部署命令 `npx wrangler deploy`）。
+
+### 绑定自己的域名（在 Cloudflare 后台操作一次）
+
+Cloudflare 后台 → **Workers 和 Pages** → `ai-text-checker` → **设置** → **域和路由** → **添加** → **自定义域** → 填入例如 `ai.wenjinge.dpdns.org`（域名需已托管在这个 Cloudflare 账户里）→ **添加域**。几分钟后即可用这个地址访问完整版，`/admin` 是管理页，`/lite/` 是轻量版。
 
 ### B. Modal（完整版）
 

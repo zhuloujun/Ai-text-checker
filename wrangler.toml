@@ -10,3 +10,8 @@ compatibility_date = "2026-09-01"
 [build]
 command = "node build.mjs"
 watch_dir = "pages-static"
+
+# 完整版检测服务（Modal）的地址。设置后，这个 Worker 会把网站转发过去，轻量版移到 /lite/。
+# 删掉这两行则恢复为只提供轻量版。
+[vars]
+BACKEND_URL = "https://zhuloujun--ai-text-checker-web.modal.run"

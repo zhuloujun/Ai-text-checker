@@ -75,6 +75,45 @@ def test_formulas_match_official(scorer):
     assert r["binoculars"] == pytest.approx(ref_binoculars(o, p, labels), rel=1e-4)
 
 
+def test_extra_features_match_reference(scorer):
+    """Log-Rank / LRR（DetectLLM）/ 熵 / GLTR top-k 与独立实现比对。"""
+    ids = scorer.tok(MODERN, add_special_tokens=False)["input_ids"][:100]
+    inp = torch.tensor([ids])
+    with torch.inference_mode():
+        p = scorer.performer(input_ids=inp).logits[0, :-1, : scorer.vocab].float()
+    labels = inp[0, 1:]
+    lp = torch.log_softmax(p, -1)
+    ll = lp[torch.arange(len(labels)), labels]
+    # 名次：按概率从高到低排序后，实际 token 的位置（从 1 开始）
+    order = torch.argsort(lp, dim=-1, descending=True)
+    ranks = (order == labels.unsqueeze(-1)).nonzero()[:, 1] + 1
+    ref_logrank = torch.log(ranks.float()).mean().item()
+    ref_lrr = (-ll.sum() / torch.log(ranks.float()).sum()).item()
+    ref_ent = (-(lp.exp() * lp).sum(-1)).mean().item()
+    r = scorer.score_ids(ids)
+    assert r["log_rank"] == pytest.approx(ref_logrank, rel=1e-4, abs=1e-6)
+    assert r["lrr"] == pytest.approx(ref_lrr, rel=1e-4)
+    assert r["entropy"] == pytest.approx(ref_ent, rel=1e-4)
+    assert r["top1"] == pytest.approx((ranks == 1).float().mean().item())
+    assert r["top10"] == pytest.approx((ranks <= 10).float().mean().item())
+    assert r["fastdetect_norm"] == pytest.approx(r["fastdetect"] / (len(ids) - 1) ** 0.5)
+    assert r["lp_burstiness"] is not None and r["lp_burstiness"] >= 0
+
+
+def test_smoothing_and_levels():
+    probs = [0.1, 0.95, 0.1, None, 0.9, 0.92]
+    sm = scoring.smooth(probs, 0.3)
+    assert sm[3] is None
+    assert sm[1] < 0.95 and sm[0] > 0.1          # 孤立高分被拉低，邻居被略微拉高
+    assert scoring.smooth(probs, 0) == probs
+    assert scoring.level_of(0.85, 0.5) == ("high", "高度疑似")
+    assert scoring.level_of(0.7, 0.5) == ("mid", "中度疑似")
+    assert scoring.level_of(0.55, 0.5) == ("light", "轻度疑似")
+    assert scoring.level_of(0.45, 0.5)[0] == "low"
+    assert scoring.level_of(0.7, 0.75)[0] == "low"
+    assert scoring.level_of(0.78, 0.75) == ("mid", "中度疑似")
+
+
 def test_long_text_is_chunked(scorer):
     r = scorer.score(MODERN * 6)
     assert r and r["tokens"] > 128
@@ -124,6 +163,30 @@ def test_expired_key():
 
 
 # ---------------- 校准 ----------------
+
+def test_calibration_extended_features():
+    import random
+    rnd = random.Random(1)
+    def mk(ai):
+        return {"fastdetect": rnd.gauss(2.8 if ai else 0.6, 0.8), "binoculars": rnd.gauss(0.82 if ai else 0.98, 0.06),
+                "classifier": rnd.uniform(0.4, 0.95) if ai else rnd.uniform(0.05, 0.6),
+                "fastdetect_norm": rnd.gauss(0.2 if ai else 0.05, 0.05), "lrr": rnd.gauss(1.6 if ai else 1.2, 0.2),
+                "log_rank": rnd.gauss(0.8 if ai else 1.4, 0.3), "entropy": rnd.gauss(2.0 if ai else 2.6, 0.4),
+                "top10": rnd.gauss(0.85 if ai else 0.7, 0.05), "lp_burstiness": rnd.gauss(0.15 if ai else 0.3, 0.08),
+                "style_cv": rnd.gauss(0.3 if ai else 0.6, 0.15), "style_phrases": rnd.gauss(3 if ai else 1, 1)}
+    human = [mk(False) for _ in range(40)]
+    ai = [mk(True) for _ in range(40)]
+    res = scoring.calibrate(human, ai, 0.05)
+    rep, cal = res["report"], res["calibration"]
+    assert rep["cross_validated"] is True
+    assert set(scoring.EXTENDED_FEATURES) == set(cal["lr"]["features"])
+    assert rep["combined_auroc"] > 0.95 and rep["human_flagged_rate"] <= 0.05 + 1e-9
+    assert "lrr" in rep["auroc"]
+    # 旧版校准 JSON（特征名为 logit(classifier)）仍然可用
+    old = dict(cal); old["lr"] = dict(cal["lr"], features=["fastdetect", "binoculars", "logit(classifier)"],
+                                      w=cal["lr"]["w"][:3], mean=cal["lr"]["mean"][:3], std=cal["lr"]["std"][:3])
+    assert 0 <= scoring.combine(ai[0], old)["prob"] <= 1
+
 
 def test_calibration_separates_synthetic():
     import random
@@ -199,7 +262,9 @@ def test_detect_sync(client):
     assert s["methods"] == {"fastdetect": True, "binoculars": True, "classifier": True}
     assert 0 <= s["ai_rate"] <= 1 and s["counted_chars"] > 0
     seg = j["result"]["segments"][0]
-    assert set(seg["raw"]) >= {"fastdetect", "binoculars", "classifier", "ppl"}
+    assert set(seg["raw"]) >= {"fastdetect", "binoculars", "classifier", "ppl", "lrr", "log_rank", "entropy", "top10", "style_cv"}
+    assert set(s["segments_by_level"]) == {"high", "mid", "light", "low"}
+    assert "reliability_notes" in s and any("校准" in n for n in s["reliability_notes"])
     assert 0 <= seg["prob"] <= 1
 
 

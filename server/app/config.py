@@ -40,6 +40,8 @@ CLS_MAX_TOKENS = _int("CLS_MAX_TOKENS", 512)
 SEGMENT_TARGET_CHARS = _int("SEGMENT_TARGET_CHARS", 400)
 SEGMENT_MIN_CHARS = _int("SEGMENT_MIN_CHARS", 80)
 FAST_MODE_MAX_SEGMENTS = _int("FAST_MODE_MAX_SEGMENTS", 60)  # 快速模式下语言模型最多检测多少段
+# 相邻段落平滑强度（0 = 不平滑，0.3 = 本段 70% + 相邻段 30%）
+SMOOTHING = float(os.getenv("SMOOTHING", "0.3") or 0.3)
 # 文言虚词（之乎者也矣焉哉曰…）占汉字比例超过此值的段落，视为以古籍引文为主，不计入 AI 率
 CLASSICAL_THRESHOLD = float(os.getenv("CLASSICAL_THRESHOLD", "0.07") or 0.07)
 

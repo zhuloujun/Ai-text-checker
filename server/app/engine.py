@@ -15,7 +15,13 @@ from .segmenter import segment_text
 
 log = logging.getLogger("engine")
 
-LEVELS = [(0.8, "high", "高度疑似"), (0.6, "mid", "中度疑似"), (0.0, "low", "")]
+
+
+def style_scores(text: str, feats: dict | None = None) -> dict:
+    """供校准使用的统计特征：句长变异系数、每千字套话数。"""
+    f = feats or stylometry.features(text)
+    return {"style_cv": f["sentence_len_cv"],
+            "style_phrases": len(f["template_phrases"]) / max(len(text), 1) * 1000}
 
 
 class Engine:
@@ -70,7 +76,7 @@ class Engine:
     # ---------- 打分 ----------
     def raw_scores(self, texts: list[str], progress=None) -> list[dict]:
         """对若干段文字算原始分数（校准时也用这个）。"""
-        out = [{} for _ in texts]
+        out = [style_scores(t) for t in texts]
         if self.cls and self.cls.ready:
             for i, p in enumerate(self.cls.predict(texts)):
                 out[i]["classifier"] = p
@@ -128,52 +134,85 @@ class Engine:
 
         cal = self.cal
         thr = float(cal.get("threshold", 0.5))
-        seg_out, flagged_chars, counted_chars, prob_weighted = [], 0, 0, 0.0
-        level_counts = {"high": 0, "mid": 0, "low": 0}
+        styles = {s.index: stylometry.features(s.text) for s in counted}
+        for s in counted:
+            results[s.index].update(style_scores(s.text, styles[s.index]))
+
+        # 1) 每段先各自打分
+        combos = {s.index: (scoring.combine(results[s.index], cal) if s.counted else {"prob": None, "signals": {}})
+                  for s in segs}
+        # 2) 与相邻正文段落平滑（只在正文段落之间进行）
+        body_idx = [s.index for s in counted]
+        raw_probs = [combos[i]["prob"] for i in body_idx]
+        smoothed = dict(zip(body_idx, scoring.smooth(raw_probs, config.SMOOTHING)))
+
+        seg_out, counted_chars, prob_weighted = [], 0, 0.0
+        chars_by_level = {"high": 0, "mid": 0, "light": 0, "low": 0}
+        level_counts = {"high": 0, "mid": 0, "light": 0, "low": 0}
         for s in segs:
             sc = results[s.index]
-            comb = scoring.combine(sc, cal) if s.counted else {"prob": None, "signals": {}}
-            prob = comb["prob"]
-            level, label = "none", ""
+            comb = combos[s.index]
+            prob = smoothed.get(s.index) if s.counted else None
+            level, label = scoring.level_of(prob, thr) if s.counted else ("none", "")
             if s.counted and prob is not None:
                 counted_chars += len(s.text)
                 prob_weighted += prob * len(s.text)
-                if prob >= thr:
-                    flagged_chars += len(s.text)
-                    level, label = ("high", "高度疑似") if prob >= max(0.8, thr) else ("mid", "疑似")
-                else:
-                    level = "low"
+                chars_by_level[level] += len(s.text)
                 level_counts[level] += 1
             seg_out.append({
                 "index": s.index, "start": s.start, "chars": len(s.text), "text": s.text,
                 "kind": s.kind, "notes": s.notes,
                 "prob": None if prob is None else round(prob, 4),
+                "prob_unsmoothed": None if comb["prob"] is None else round(comb["prob"], 4),
                 "level": level, "label": label,
                 "signals": {k: (None if v is None else round(v, 4)) for k, v in comb["signals"].items()},
                 "raw": {k: (round(v, 4) if isinstance(v, float) else v) for k, v in sc.items()},
-                "style": stylometry.features(s.text) if s.counted else None,
+                "style": styles.get(s.index),
                 "scored_by_lm": s.index in lm_ids and "fastdetect" in sc,
             })
 
         excluded = [s for s in segs if not s.counted]
+        flagged_chars = chars_by_level["high"] + chars_by_level["mid"] + chars_by_level["light"]
+        rate = (lambda n: round(n / counted_chars, 4) if counted_chars else None)
+
+        # 可信度提示（参考 Turnitin 等平台对短文本、未校准结果的处理）
+        notes = []
+        if counted_chars < 300:
+            notes.append("参与计算的正文不足 300 字，结果波动较大，仅供参考。")
+        if not cal.get("calibrated"):
+            notes.append("尚未用你的样本校准，阈值为经验值，AI 率只宜作相对参考。")
+        if sampled:
+            notes.append(f"快速模式：语言模型只检测了 {len(lm_ids)} 段，其余段落仅用分类器。")
+        if excluded and sum(len(x.text) for x in excluded) > 0.3 * max(1, len(text)):
+            notes.append("超过 30% 的文字因参考文献或引文被排除，AI 率只反映其余正文。")
+        if not (self.lm and self.lm.ready):
+            notes.append("语言模型未就绪，本次只使用了分类器。")
+
         return {
             "summary": {
-                "ai_rate": round(flagged_chars / counted_chars, 4) if counted_chars else None,
+                "ai_rate": rate(flagged_chars),
+                "high_rate": rate(chars_by_level["high"]),
+                "mid_rate": rate(chars_by_level["mid"]),
+                "light_rate": rate(chars_by_level["light"]),
                 "mean_prob": round(prob_weighted / counted_chars, 4) if counted_chars else None,
                 "threshold": thr,
                 "total_chars": len(text),
                 "counted_chars": counted_chars,
                 "flagged_chars": flagged_chars,
+                "chars_by_level": chars_by_level,
                 "excluded_chars": sum(len(s.text) for s in excluded),
                 "excluded_reference_segments": sum(1 for s in excluded if s.kind == "reference"),
                 "excluded_quotation_segments": sum(1 for s in excluded if s.kind == "quotation"),
                 "segments": len(segs),
                 "segments_by_level": level_counts,
+                "smoothing": config.SMOOTHING,
                 "mode": mode,
                 "lm_sampled": sampled,
                 "lm_scored_segments": len(lm_ids) if (self.lm and self.lm.ready) else 0,
                 "calibrated": bool(cal.get("calibrated")),
                 "calibration_note": cal.get("note"),
+                "calibration_features": (cal.get("lr") or {}).get("features"),
+                "reliability_notes": notes,
                 "methods": {
                     "fastdetect": bool(self.lm and self.lm.ready),
                     "binoculars": bool(self.lm and self.lm.ready),

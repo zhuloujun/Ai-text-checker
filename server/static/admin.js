@@ -96,6 +96,7 @@ $('calBtn').addEventListener('click', async ()=>{
     msg(m, '校准完成。', true);
     out.innerHTML = `
       <p class="msg">样本：人写 ${report.n_human} 段、AI ${report.n_ai} 段。区分能力（AUROC，1 = 完美，0.5 = 随机）：${esc(au)}；综合 ${report.combined_auroc}。<br>
+      参与组合的特征：${esc((report.features_used||[]).join('、') || '三个主信号')}${report.cross_validated ? '（已做 5 折交叉验证）' : ''}。<br>
       阈值 ${report.threshold}：校准样本中人写段落被误判的比例 ${(report.human_flagged_rate*100).toFixed(1)}%，AI 段落被识别出的比例 ${(report.ai_caught_rate*100).toFixed(1)}%。<br>${esc(report.note)}</p>
       <div class="out" id="calJson">${esc(JSON.stringify(calibration))}</div>
       <div class="form-row" style="margin-top:8px">

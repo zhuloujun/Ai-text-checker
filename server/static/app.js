@@ -70,6 +70,8 @@ async function refreshHealth(){
   }
 }
 refreshHealth();
+// 通过 Cloudflare 域名访问时才有轻量版（/lite/）
+if(!location.hostname.endsWith('modal.run')){ const l = document.getElementById('liteLink'); if(l) l.hidden = false; }
 
 /* ---------------- 输入 ---------------- */
 document.querySelectorAll('.tab-btn').forEach(btn=>{
@@ -251,15 +253,19 @@ function renderResult(res){
   sealNum.textContent = s.ai_rate == null ? '—' : pct(s.ai_rate);
   $('sumRate').textContent = pct(s.ai_rate);
   $('sumMean').textContent = pct(s.mean_prob);
-  const flagged = (s.segments_by_level.high||0) + (s.segments_by_level.mid||0);
-  const counted = flagged + (s.segments_by_level.low||0);
+  $('sumHigh').textContent = pct(s.high_rate);
+  const L = s.segments_by_level || {};
+  const flagged = (L.high||0) + (L.mid||0) + (L.light||0);
+  const counted = flagged + (L.low||0);
+  $('notesList').innerHTML = (s.reliability_notes || []).map(n=>`<li>${escapeHtml(n)}</li>`).join('');
   $('sumFlagged').textContent = `${flagged} / ${counted}`;
   $('sumExcluded').textContent = s.excluded_chars.toLocaleString();
   const methods = Object.entries(s.methods).filter(([,v])=>v).map(([k])=>SIG_NAME[k]).join('、') || '无';
   $('calibLine').innerHTML =
     `使用方法：${escapeHtml(methods)} · 判定阈值 ${pct(s.threshold)} · ` +
     (s.calibrated ? `<b>已校准</b>：${escapeHtml(s.calibration_note||'')}` : '<b>未校准</b>：阈值为经验值，结果只宜作相对参考') +
-    (s.lm_sampled ? ` · 快速模式：语言模型只检测了 ${s.lm_scored_segments} 段，其余段落仅用分类器` : '') +
+    ` · 高度 ${pct(s.high_rate)} / 中度 ${pct(s.mid_rate)} / 轻度 ${pct(s.light_rate)}` +
+    ` · 相邻段落平滑 ${s.smoothing}` +
     ` · 用时 ${s.elapsed_sec} 秒` +
     (s.excluded_reference_segments || s.excluded_quotation_segments
       ? ` · 未计入：参考文献 ${s.excluded_reference_segments} 段、引文为主 ${s.excluded_quotation_segments} 段` : '');
@@ -269,7 +275,7 @@ function renderResult(res){
     const div = document.createElement('div');
     const lvl = seg.kind !== 'body' ? 'none' : seg.level;
     div.className = `para-item level-${lvl}`;
-    div.dataset.flagged = (lvl === 'high' || lvl === 'mid') ? '1' : '0';
+    div.dataset.flagged = (lvl === 'high' || lvl === 'mid' || lvl === 'light') ? '1' : '0';
     const preview = seg.text.length > 280 ? seg.text.slice(0,280) + '……' : seg.text;
     const sig = Object.entries(seg.signals || {}).filter(([,v])=>v!=null)
       .map(([k,v])=>`<span class="para-tag">${SIG_NAME[k]} ${pct(v)}</span>`).join('');
@@ -279,6 +285,12 @@ function renderResult(res){
       raw.binoculars!=null ? `Binoculars 分数 ${raw.binoculars.toFixed(3)}` : '',
       raw.classifier!=null ? `分类器 ${pct(raw.classifier)}` : '',
       raw.ppl!=null ? `困惑度 ${Math.exp(raw.ppl).toFixed(1)}` : '',
+      raw.lrr!=null ? `LRR ${raw.lrr.toFixed(3)}` : '',
+      raw.log_rank!=null ? `平均对数名次 ${raw.log_rank.toFixed(2)}` : '',
+      raw.top10!=null ? `前 10 名占比 ${pct(raw.top10)}` : '',
+      raw.entropy!=null ? `预测熵 ${raw.entropy.toFixed(2)}` : '',
+      raw.lp_burstiness!=null ? `困惑度波动 ${raw.lp_burstiness.toFixed(3)}` : '',
+      (seg.prob_unsmoothed!=null && seg.prob!=null && Math.abs(seg.prob_unsmoothed-seg.prob)>0.005) ? `平滑前 ${pct(seg.prob_unsmoothed)}` : '',
       seg.style ? `句长变异 ${seg.style.sentence_len_cv}` : '',
       seg.style && seg.style.template_phrases.length ? `套话：${seg.style.template_phrases.join('、')}` : ''
     ].filter(Boolean).join(' · ');
@@ -314,7 +326,8 @@ exportBtn.addEventListener('click', ()=>{
   const s = lastResult.summary;
   let out = `审读 · AI 文本检测报告\n生成时间：${new Date().toLocaleString('zh-CN')}\n来源：${currentSource}\n`;
   out += `总字数：${s.total_chars} · 计入字数：${s.counted_chars} · 未计入：${s.excluded_chars}\n`;
-  out += `AI 率：${pct(s.ai_rate)} · 平均 AI 概率：${pct(s.mean_prob)} · 阈值：${pct(s.threshold)} · ${s.calibrated ? '已校准' : '未校准'}\n`;
+  out += `AI 率：${pct(s.ai_rate)}（高度 ${pct(s.high_rate)} / 中度 ${pct(s.mid_rate)} / 轻度 ${pct(s.light_rate)}） · 平均 AI 概率：${pct(s.mean_prob)} · 阈值：${pct(s.threshold)} · ${s.calibrated ? '已校准' : '未校准'}\n`;
+  (s.reliability_notes || []).forEach(n=>{ out += `提示：${n}\n`; });
   out += `方法：Fast-DetectGPT、Binoculars（Qwen2.5 打分）、MPU 中文分类器；模式：${s.mode === 'fast' ? '快速（抽样）' : '完整'}\n`;
   out += `\n【说明】任何 AI 检测都有误判，本报告只供作者自查，不能作为学术不端判定依据。\n`;
   out += `\n${'='.repeat(60)}\n分段结果\n${'='.repeat(60)}\n`;

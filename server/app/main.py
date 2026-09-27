@@ -77,7 +77,9 @@ def require_key(authorization: str | None, x_api_key: str | None) -> dict:
 
 
 def require_admin(request: Request, token: str | None):
-    ip = request.client.host if request.client else "?"
+    # 经 Cloudflare Worker 转发时，真实访客 IP 在 X-Forwarded-For 的第一个
+    fwd = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+    ip = fwd or (request.client.host if request.client else "?")
     now = time.time()
     fails = [t for t in _admin_fail.get(ip, []) if now - t < 600]
     if len(fails) >= 10:

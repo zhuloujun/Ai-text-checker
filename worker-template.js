@@ -2,8 +2,9 @@
  * 审读 · 文本特征检测 —— Cloudflare Worker 单文件版
  *
  * 这一个文件同时负责：
- *   1. 提供网页本身（HTML / CSS / JS 已经打包在下面的常量里）
- *   2. /api/detect：把检测请求转发给 GPTZero 官方接口
+ *   1. 设置了变量 BACKEND_URL 时：把网站转发到完整版检测服务（Modal），轻量版放在 /lite/
+ *      没设置时：直接提供轻量版网页
+ *   2. /api/detect：把轻量版的检测请求转发给 GPTZero 官方接口
  *
  * 部署：Cloudflare Dashboard → Workers & Pages → 创建 → Worker（从 Hello World 开始）
  *       → 编辑代码 → 把本文件全部内容粘贴进去替换 → 部署。详见 README。
@@ -31,6 +32,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
+    // 轻量版的 GPTZero 转发接口（两种模式下都保留）
     if (url.pathname === '/api/detect') {
       if (request.method !== 'POST') {
         return json({ error: 'method_not_allowed', message: '此接口只接受 POST 请求' }, 405);
@@ -38,23 +40,61 @@ export default {
       return handleDetect(request, env);
     }
 
-    if (request.method !== 'GET' && request.method !== 'HEAD') {
-      return new Response('Method Not Allowed', { status: 405 });
+    // 设置了 BACKEND_URL（完整版检测服务地址）时：
+    //   /lite/...  → 轻量版（浏览器本地检测）
+    //   其他路径    → 原样转发给完整版（Modal 上的检测服务）
+    if (env.BACKEND_URL) {
+      if (url.pathname === '/lite') return Response.redirect(url.origin + '/lite/', 301);
+      if (url.pathname.startsWith('/lite/')) return serveLite(request, url.pathname.slice('/lite'.length));
+      return proxy(request, env, url);
     }
-
-    switch (url.pathname) {
-      case '/':
-      case '/index.html':
-        return asset(INDEX_HTML, 'text/html; charset=utf-8');
-      case '/style.css':
-        return asset(STYLE_CSS, 'text/css; charset=utf-8');
-      case '/app.js':
-        return asset(APP_JS, 'application/javascript; charset=utf-8');
-      default:
-        return new Response('Not Found', { status: 404 });
-    }
+    return serveLite(request, url.pathname);
   }
 };
+
+function serveLite(request, path) {
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    return new Response('Method Not Allowed', { status: 405 });
+  }
+  switch (path) {
+    case '/':
+    case '/index.html':
+      return asset(INDEX_HTML, 'text/html; charset=utf-8');
+    case '/style.css':
+      return asset(STYLE_CSS, 'text/css; charset=utf-8');
+    case '/app.js':
+      return asset(APP_JS, 'application/javascript; charset=utf-8');
+    default:
+      return new Response('Not Found', { status: 404 });
+  }
+}
+
+async function proxy(request, env, url) {
+  const backend = env.BACKEND_URL.replace(/\/+$/, '');
+  const target = backend + url.pathname + url.search;
+  const headers = new Headers(request.headers);
+  headers.delete('host');
+  headers.set('X-Forwarded-Host', url.host);
+  headers.set('X-Forwarded-Proto', 'https');
+  const ip = request.headers.get('CF-Connecting-IP');
+  if (ip) headers.set('X-Forwarded-For', ip);
+  const init = { method: request.method, headers, redirect: 'manual' };
+  if (request.method !== 'GET' && request.method !== 'HEAD') init.body = request.body;
+
+  let resp;
+  try {
+    resp = await fetch(target, init);
+  } catch (e) {
+    return json({ error: 'backend_unreachable',
+      message: '检测服务暂时连不上，可能正在启动（闲置后首次访问需要 1–3 分钟），请稍后再试。' }, 502);
+  }
+  const out = new Response(resp.body, resp);
+  // 后端返回的跳转地址改回当前域名，避免把用户带到 modal.run
+  const loc = out.headers.get('Location');
+  if (loc && loc.startsWith(backend)) out.headers.set('Location', url.origin + loc.slice(backend.length));
+  out.headers.set('X-Served-Via', 'cloudflare-worker');
+  return out;
+}
 
 async function handleDetect(request, env) {
   const userKey = (request.headers.get('X-User-Api-Key') || '').trim();
