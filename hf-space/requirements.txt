@@ -1,0 +1,8 @@
+transformers>=4.45,<5
+tokenizers>=0.20
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+pdfminer.six>=20231228
+numpy>=1.26
+huggingface_hub>=0.24

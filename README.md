@@ -1,48 +1,78 @@
-# 审读 · 文本特征检测
+# 审读 · 论文 AI 文本检测
 
-粘贴文本或上传 .txt / .docx / .pdf（20 万字左右也能处理），检查三方面：
+这个仓库里有两个互相独立的网站，改完代码推送到 GitHub 后都会**自动部署**：
 
-1. **本地 AI 特征疑似度**：基于句长突发性、字符重复率、AI 常用套话密度、句长集中度的统计评分，全部在浏览器里算，不上传。
-2. **标点与排版格式检查**：规避检测痕迹、标点规范、字体字号、段落排版、表格、修订、文档属性等 40 项左右（见下文），全部在浏览器里算，不上传。
-3. **GPTZero 官方模型检测（可选）**：需要你自己的 GPTZero API Key，文本会发送给 GPTZero。
+| 文件夹 | 是什么 | 部署到哪里 | 怎么自动部署 |
+|---|---|---|---|
+| 仓库根目录（`worker.js`、`pages-static/` 等） | 轻量版：浏览器本地统计检测 + 标点排版检查，可选接入 GPTZero | Cloudflare Worker `ai-text-checker` | Cloudflare 自动构建：`main` 分支有新提交就重新部署 |
+| `hf-space/` | 完整版：Fast-DetectGPT + Binoculars + MPU 中文分类器，自签发 API Key，可校准 | Hugging Face Space `tdyso/ai-text-checker` | GitHub Actions：`hf-space/` 有改动时先测试，通过后同步到 Space |
 
----
-
-## 一、部署（推荐：Worker，全部功能可用）
-
-> ⚠ 更正：上一版说明让你用 Pages 拖拽上传 `functions/` 文件夹，但 Cloudflare 官方文档写明：
-> "Drag and drop deployments made from the Cloudflare dashboard do not currently support compiling a `functions` folder"。
-> 那样部署的话 API 功能不会生效。本版改为 **Worker 单文件部署**，全程在网页后台操作，不需要命令行。
-
-1. 打开 https://dash.cloudflare.com/ → 左侧 **Workers & Pages** → **Create（创建）**
-2. 选 **Worker** 那一栏，选 **Start with Hello World!**（从 Hello World 开始）→ 起个名字，例如 `shendu` → **Deploy（部署）**
-3. 部署完成后点 **Edit code（编辑代码）**
-4. 打开本压缩包里的 **`worker.js`**，全选、复制，粘贴到在线编辑器里，**替换掉**原来的全部代码
-5. 点右上角 **Deploy（部署）**
-6. 访问 `https://shendu.<你的子域>.workers.dev` 即可使用
-
-本地检测（第 1、2 项）到这一步就能用了。免费版 Worker 每天 10 万次请求，个人使用绰绰有余。
-
-### 启用 GPTZero 官方检测（可选）
-
-两种方式任选：
-
-**方式 A：在网页上填写 Key（最简单）**
-打开网页 → 展开"⚙ 官方 API 增强检测" → 勾选启用 → 在输入框里填你的 GPTZero Key。
-Key 只随请求发给你自己的 Worker，再由 Worker 转发给 GPTZero，不写进代码、不在服务器保存。
-勾选"在本浏览器记住"后，下次打开不用重新填（只存在这台电脑的这个浏览器里）。
-
-**方式 B：把 Key 存在 Worker 里（不用每次填）**
-1. Worker 页面 → **Settings（设置）→ Variables and Secrets（变量和机密）→ Add（添加）**
-2. 类型选 **Secret**，名称 `GPTZERO_API_KEY`，值填你的 Key
-3. **再添加一个** Secret，名称 `ACCESS_PASSWORD`，值是你自己定的密码
-4. 保存（部署）后，在网页的"访问密码"框里填这个密码即可，Key 框留空
-
-> 为什么方式 B 必须设密码：Worker 网址是公开的，如果只存 Key 不设密码，任何拿到网址的人都能用掉你的 GPTZero 额度。没设 `ACCESS_PASSWORD` 时，本程序会直接拒绝使用存储的 Key。
+```
+你在 GitHub 上改代码 ─┬─→ Cloudflare 自动构建 ──→ Cloudflare 网站
+                      └─→ GitHub Actions 测试 ──→ 同步到 Hugging Face ──→ Space 自动重建
+```
 
 ---
 
-## 二、GPTZero API Key：在哪里申请？免费吗？
+## 一次性设置（只需做一次）
+
+### A. Hugging Face：让 GitHub 有权限更新你的 Space
+
+1. **生成 Hugging Face 令牌**
+   打开 <https://huggingface.co/settings/tokens> → **Create new token** → 类型选 **Write** → 名称随便填（如 `github-deploy`）→ **Create token**，复制保存（以 `hf_` 开头，只显示一次）。
+2. **把令牌存进 GitHub**
+   打开 <https://github.com/zhuloujun/Ai-text-checker/settings/secrets/actions> → **New repository secret**：
+   - Name：`HF_TOKEN`，Secret：刚才复制的令牌 → **Add secret**
+3. **设置 Space 管理员密码**（用来登录 `/admin` 签发 API Key）
+   同一页面再点 **New repository secret**：
+   - Name：`HF_ADMIN_TOKEN`，Secret：你自己定的密码（建议 20 位以上）→ **Add secret**
+4. **第一次部署**
+   打开 <https://github.com/zhuloujun/Ai-text-checker/actions> → 左侧选 **部署到 Hugging Face Space** → 右侧 **Run workflow** → **Run workflow**。
+   - 约 5 分钟后两个步骤都变成绿色 ✓。Space 会被自动创建在 `tdyso/ai-text-checker`。
+   - 然后 Hugging Face 开始构建镜像（首次约 5–15 分钟，要下载约 2 GB 模型）。可在 <https://huggingface.co/spaces/tdyso/ai-text-checker> 看进度，显示 *Running* 即完成。
+5. 打开 <https://tdyso-ai-text-checker.hf.space/admin>，输入第 3 步的密码，生成 API Key。
+
+> 想换 Space 名称：在 GitHub 仓库 Settings → Secrets and variables → Actions → **Variables** 标签页新建变量 `HF_SPACE`，值如 `tdyso/另一个名字`。
+
+### B. Cloudflare：确认自动构建已连接
+
+Worker `ai-text-checker` 已经通过 Cloudflare 的"导入仓库"部署。确认方法：Cloudflare 后台 → **Workers & Pages** → `ai-text-checker` → **Settings** → **Build**，应显示已连接 `zhuloujun/Ai-text-checker`、分支 `main`。
+
+- 可选：在同一页面的 **Build watch paths** 里把 `hf-space/*` 加进"排除"（Exclude），这样只改 Hugging Face 部分时 Cloudflare 不会白白重新部署。
+- 如果显示未连接：点 **Connect**，选择这个仓库和 `main` 分支，其余保持默认。
+
+---
+
+## 以后怎么更新
+
+**在网页上改（不需要装任何软件）**：在 GitHub 打开要改的文件 → 点右上角铅笔图标 ✏️ → 修改 → **Commit changes**。几分钟后两个网站会自动更新。
+
+**看部署是否成功**：
+- Hugging Face：<https://github.com/zhuloujun/Ai-text-checker/actions>，绿色 ✓ 表示成功，红色 ✗ 点进去看哪一步出错（最常见：令牌过期 → 重新生成并更新 `HF_TOKEN`）。
+- Cloudflare：Worker 页面的 **Deployments** 标签。
+
+**改网页界面时注意**：Cloudflare 版的网页源文件在 `pages-static/`，部署时会自动打包成 `worker.js`，不用手动运行 `build.mjs`。
+
+---
+
+## 仓库结构
+
+```
+worker.js              Cloudflare Worker（由 build.mjs 生成，已提交一份便于在后台直接粘贴）
+worker-template.js     Worker 模板（API 转发逻辑）
+pages-static/          Cloudflare 版网页源文件
+build.mjs              打包脚本（Cloudflare 部署时自动运行）
+wrangler.toml          Cloudflare 配置（name 必须与 Worker 名一致）
+hf-space/              Hugging Face 完整版（说明见 hf-space/README.md）
+.github/workflows/     自动测试与部署
+.github/scripts/       同步到 Hugging Face 的脚本
+```
+
+---
+
+## 附录：Cloudflare 轻量版说明
+
+### GPTZero API Key：在哪里申请？免费吗？
 
 **不免费。** 目前没有既免费又可靠的 AI 检测 API。
 
@@ -59,11 +89,13 @@ Key 只随请求发给你自己的 Worker，再由 Worker 转发给 GPTZero，�
 
 费用提示：GPTZero 单次请求最多约 5 万字符，20 万字的文档会自动分成 **5 次左右**请求。计费以你套餐的官方说明为准，建议先用一小段文字试一次，确认扣费方式。
 
+配置方式（二选一）：在网页"⚙ 官方 API 增强检测"里直接填写 Key；或在 Cloudflare 的 Worker `ai-text-checker` → **Settings → Variables and Secrets** 添加两个 Secret：`GPTZERO_API_KEY` 和 `ACCESS_PASSWORD`（后者必须设置，防止别人用掉你的额度），然后在网页上填写访问密码。
+
 **关于隐私**：本地检测不上传任何内容；启用 GPTZero 后，文本会发送到 GPTZero 服务器。未发表的论文请自行权衡。
 
 ---
 
-## 三、标点与排版格式检查包括哪些
+### 标点与排版格式检查包括哪些
 
 先说清楚一点：知网 AIGC、GPTZero 这类 AI 检测，是把文档**转成纯文本**后再判断的，字体、字号、表格样式本身不会直接改变 AI 分数。排版之所以和"查重"有关，主要在于：
 - 隐藏文字、白色文字、零宽字符、形近字母替换等**规避手法**，检测系统（尤其是文字复制比检测）会专门识别，一旦发现通常会人工复核；
@@ -98,7 +130,7 @@ Key 只随请求发给你自己的 Worker，再由 Worker 转发给 GPTZero，�
 
 ---
 
-## 四、已知局限
+### 已知局限
 
 - 本地"AI 疑似度"是统计方法，准确率明显低于商用神经网络检测器，误判较多。
 - **史学、人文社科论文尤其容易被误判**：大量古籍引文、术语、固定学术表述本身就句式规整、用词集中。GPTZero 同样可能误判这类文本。
@@ -107,32 +139,3 @@ Key 只随请求发给你自己的 Worker，再由 Worker 转发给 GPTZero，�
 
 ---
 
-## 五、另一种部署：Pages 拖拽上传（只有本地功能）
-
-如果不需要 GPTZero，也可以：Workers & Pages → Create → **Pages** → **Upload assets（上传资产）** → 把 `pages-static/` 文件夹**里面的三个文件**拖进去 → 部署。这种方式下 API 功能不可用。
-
----
-
-## 六、文件说明
-
-```
-worker.js            ← 部署用：粘贴到 Worker 在线编辑器（已打包网页，单文件）
-pages-static/        ← 网页源文件；也可单独拖到 Pages（只有本地功能）
-  index.html
-  style.css
-  app.js
-worker-template.js   ← worker.js 的模板（API 转发逻辑在这里）
-build.mjs            ← 修改 pages-static/ 后，运行 node build.mjs 重新生成 worker.js
-wrangler.toml        ← 可选：用命令行部署时使用（npx wrangler deploy）
-README.md
-```
-
-用命令行部署（可选）：
-```bash
-npx wrangler login
-npx wrangler deploy
-npx wrangler secret put GPTZERO_API_KEY     # 可选
-npx wrangler secret put ACCESS_PASSWORD     # 设置了上一项就必须设置
-```
-
-网页使用的开源库（mammoth.js、pdf.js、JSZip）从 cdnjs / jsDelivr 加载，只下载库文件，不会上传你的文档。

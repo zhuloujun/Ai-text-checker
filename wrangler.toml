@@ -1,5 +1,10 @@
-# 可选：只有用命令行部署（npx wrangler deploy）时才需要这个文件。
-# 用 Dashboard 在线编辑器部署的话可以忽略。
-name = "shendu"
+# Cloudflare 自动构建（Workers Builds）和命令行部署都读取这个文件。
+# name 必须与 Cloudflare 上的 Worker 名称一致，不要随意修改。
+name = "ai-text-checker"
 main = "worker.js"
 compatibility_date = "2026-09-01"
+
+# 每次部署前自动把 pages-static/ 里的网页打包进 worker.js
+[build]
+command = "node build.mjs"
+watch_dir = "pages-static"

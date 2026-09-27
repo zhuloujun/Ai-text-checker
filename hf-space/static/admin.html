@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>审读 · 管理</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  .card{ background: var(--paper); border: 1px solid var(--hairline); padding: 18px 20px; margin-bottom: 18px; }
+  .card h2{ font-family: var(--font-display); font-size: 18px; margin: 0 0 6px; }
+  .card p.hint{ font-size: 12.5px; color: var(--ink-soft); line-height: 1.8; margin: 0 0 12px; }
+  .form-row{ display:flex; gap: 10px; flex-wrap: wrap; align-items: end; margin-bottom: 10px; }
+  .form-row label{ display:flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--ink-soft); }
+  .form-row input, .form-row select{ border: 1px solid var(--hairline); background: var(--paper); padding: 8px 10px; font-size: 13px; font-family: var(--font-body); min-width: 0; }
+  .out{ font-family: var(--font-mono); font-size: 12px; background: var(--paper-alt); padding: 10px 12px; word-break: break-all; white-space: pre-wrap; margin: 8px 0 0; max-height: 360px; overflow:auto; }
+  textarea.samples{ width:100%; min-height: 160px; border: 1px solid var(--hairline); background: var(--paper); padding: 10px; font-size: 13px; line-height: 1.7; font-family: var(--font-body); }
+  .two{ display:grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 700px){ .two{ grid-template-columns: 1fr; } }
+  .msg{ font-size: 12.5px; margin-top: 8px; }
+  .msg.bad{ color: var(--vermillion); }
+  .msg.good{ color: var(--teal); }
+  table.usage{ width:100%; border-collapse: collapse; font-size: 12.5px; }
+  table.usage th, table.usage td{ border-bottom: 1px solid var(--hairline); padding: 6px 4px; text-align:left; }
+  .locked .needs-login{ opacity: .45; pointer-events: none; }
+</style>
+</head>
+<body>
+<div class="sheet locked" id="sheet">
+  <header class="masthead">
+    <div class="masthead-left">
+      <h1 class="title">管理</h1>
+      <p class="subtitle">签发 API Key · 查看用量 · 用自己的样本校准</p>
+    </div>
+  </header>
+
+  <section class="card">
+    <h2>管理员登录</h2>
+    <p class="hint">输入你在 Space 的 Settings → Variables and secrets 里设置的 Secret <code>ADMIN_TOKEN</code>。密码只保存在这个页面的内存里，刷新后需重新输入。</p>
+    <div class="form-row">
+      <label style="flex:1">管理员密码<input type="password" id="adminToken" autocomplete="current-password"></label>
+      <button class="primary-btn" id="loginBtn">登录</button>
+    </div>
+    <p class="msg" id="loginMsg"></p>
+  </section>
+
+  <section class="card needs-login">
+    <h2>签发 API Key</h2>
+    <p class="hint">Key 自带签名，Space 重启后仍然有效；Key 只在这里显示一次，请立即保存。<br>改动 <code>ADMIN_TOKEN</code>（或 <code>KEY_SECRET</code>）会让之前签发的所有 Key 失效。</p>
+    <div class="form-row">
+      <label style="flex:1">名称（备注）<input id="keyName" placeholder="例如：我的电脑 / Cloudflare 网站"></label>
+      <label>有效天数（0 = 永久）<input id="keyDays" type="number" min="0" value="0" style="width:120px"></label>
+      <label>每日字数额度（0 = 不限）<input id="keyQuota" type="number" min="0" value="1000000" style="width:150px"></label>
+      <button class="primary-btn" id="issueBtn">生成</button>
+    </div>
+    <div id="issueOut"></div>
+  </section>
+
+  <section class="card needs-login">
+    <h2>用量与作废</h2>
+    <p class="hint">用量只记在内存里，Space 重启后清零。作废会立即生效，但要在重启后仍然有效，请把 Key 编号加入变量 <code>REVOKED_KEY_IDS</code>（多个用英文逗号分隔）。</p>
+    <div class="form-row">
+      <button class="ghost-btn" id="usageBtn">刷新用量</button>
+      <label style="flex:1">要作废的 Key 编号<input id="revokeId" placeholder="8 位编号，例如 1a2b3c4d"></label>
+      <button class="ghost-btn" id="revokeBtn">作废</button>
+    </div>
+    <div id="usageOut"></div>
+  </section>
+
+  <section class="card needs-login">
+    <h2>校准</h2>
+    <p class="hint">开源检测方法的默认阈值不是按中文学术文字定的。校准能让结果适合你的文字风格：左边放<strong>确定是你自己写的</strong>文字（最好是 2022 年以前、没用过 AI 的旧稿，含引文较多的也放进来），右边放<strong>AI 生成的</strong>同类文字（例如让几个不同的 AI 就相同题目写的段落）。<br>
+    多篇文字之间用单独一行 <code>===</code> 分隔，也可以直接选择多个 .txt / .docx 文件追加进来。每边建议 1 万字以上。校准会在后台运行，可能需要几分钟到十几分钟。</p>
+    <div class="two">
+      <div>
+        <label class="key-label">人写样本</label>
+        <textarea class="samples" id="humanText" placeholder="粘贴你自己写的文字……"></textarea>
+        <input type="file" id="humanFiles" multiple accept=".txt,.docx,.md">
+      </div>
+      <div>
+        <label class="key-label">AI 生成样本</label>
+        <textarea class="samples" id="aiText" placeholder="粘贴 AI 生成的文字……"></textarea>
+        <input type="file" id="aiFiles" multiple accept=".txt,.docx,.md">
+      </div>
+    </div>
+    <div class="form-row" style="margin-top:12px">
+      <label>人写文字的误判率上限
+        <select id="targetFpr">
+          <option value="0.01">1%（最保守）</option>
+          <option value="0.05" selected>5%</option>
+          <option value="0.10">10%</option>
+        </select>
+      </label>
+      <button class="primary-btn" id="calBtn">开始校准</button>
+    </div>
+    <p class="msg" id="calMsg"></p>
+    <div id="calOut"></div>
+  </section>
+
+  <footer class="foot"><a href="/">返回检测页</a> · <a href="/docs">API 文档</a> · <a href="/health">运行状态</a></footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script src="/static/admin.js"></script>
+</body>
+</html>

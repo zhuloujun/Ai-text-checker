@@ -1,0 +1,59 @@
+# 修改 hf-space/ 并推送到 main 后：先跑测试，通过后自动同步到 Hugging Face Space。
+# 也可以在 GitHub 的 Actions 页面手动运行（Run workflow）。
+name: 部署到 Hugging Face Space
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "hf-space/**"
+      - ".github/workflows/deploy-hf-space.yml"
+      - ".github/scripts/sync_hf_space.py"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-hf-space
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: 测试
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: hf-space/requirements.txt
+      - name: 安装依赖
+        run: |
+          pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install -r hf-space/requirements.txt pytest httpx
+      - name: 运行测试（用随机小模型检查流程与公式）
+        working-directory: hf-space
+        run: |
+          python tests/make_tiny_models.py /tmp/tiny
+          TEST_MODELS_DIR=/tmp/tiny python -m pytest -q
+      - name: 检查网页脚本语法
+        run: node --check hf-space/static/app.js && node --check hf-space/static/admin.js
+
+  deploy:
+    name: 同步到 Space
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install "huggingface_hub>=0.24"
+      - name: 同步 hf-space/ → Hugging Face
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_ADMIN_TOKEN: ${{ secrets.HF_ADMIN_TOKEN }}
+          HF_SPACE: ${{ vars.HF_SPACE }}
+          GIT_SHA: ${{ github.sha }}
+        run: python .github/scripts/sync_hf_space.py

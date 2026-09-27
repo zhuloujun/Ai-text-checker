@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>审读 · AI 文本检测</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="sheet">
+
+  <header class="masthead">
+    <div class="masthead-left">
+      <h1 class="title">审读</h1>
+      <p class="subtitle">论文 AI 文本检测 · 三种开源方法综合判断 · 自部署</p>
+    </div>
+    <div class="masthead-right">
+      <div class="seal" aria-hidden="true">
+        <span class="seal-num" id="sealNum">—</span>
+        <span class="seal-label">AI 率</span>
+      </div>
+    </div>
+  </header>
+
+  <p class="status-line" id="statusLine">正在连接服务…</p>
+
+  <section class="notice">
+    <p><strong>检测方法：</strong>① Fast-DetectGPT（ICLR 2024，概率曲率）② Binoculars（ICML 2024，困惑度与交叉困惑度之比）③ MPU 中文分类器（ICLR 2024）。前两种使用 Qwen2.5 语言模型打分。
+    "AI 率"= 判为疑似 AI 的正文字数 ÷ 参与计算的正文字数；参考文献和以引文为主的段落不计入。
+    <strong>任何 AI 检测都有误判</strong>，尤其是术语密集、表述规范的学术文字；结果只供自查，不能作为学术不端判定依据。</p>
+  </section>
+
+  <section class="settings-zone key-zone">
+    <div class="settings-panel">
+      <label class="key-label" for="apiKeyInput">API Key</label>
+      <div class="key-row">
+        <input type="password" id="apiKeyInput" class="key-input" placeholder="atc-…（在 /admin 页面签发）" autocomplete="off" spellcheck="false">
+        <button type="button" class="ghost-btn" id="keyShowBtn">显示</button>
+      </div>
+      <label class="settings-check small">
+        <input type="checkbox" id="rememberKey">
+        <span>在本浏览器记住 Key（公用电脑不要勾选）</span>
+      </label>
+    </div>
+  </section>
+
+  <section class="input-zone">
+    <div class="input-tabs">
+      <button class="tab-btn active" data-tab="paste">粘贴文本</button>
+      <button class="tab-btn" data-tab="upload">上传文档</button>
+    </div>
+    <div class="tab-panel" id="panel-paste">
+      <textarea id="pasteArea" placeholder="将文本粘贴到此处……"></textarea>
+    </div>
+    <div class="tab-panel hidden" id="panel-upload">
+      <div class="dropzone" id="dropzone">
+        <p class="dz-main">拖拽文件到此处，或 <label for="fileInput" class="dz-link">点击选择文件</label></p>
+        <p class="dz-sub">支持 .docx / .pdf / .txt，20 万字左右的文档可以处理。文件在浏览器里解析，只把提取出的文字发给你自己的服务。</p>
+        <input type="file" id="fileInput" accept=".txt,.docx,.pdf,.md" hidden>
+      </div>
+      <div class="file-info hidden" id="fileInfo">
+        <span id="fileName"></span>
+        <span id="fileMeta" class="muted"></span>
+        <button id="fileClear" class="link-btn">移除</button>
+      </div>
+    </div>
+    <div class="options-row">
+      <label class="opt"><input type="radio" name="mode" value="full" checked> 完整检测（逐段）</label>
+      <label class="opt"><input type="radio" name="mode" value="fast"> 快速检测（抽样约 60 段）</label>
+      <label class="opt"><input type="checkbox" id="optRefs" checked> 排除参考文献</label>
+      <label class="opt"><input type="checkbox" id="optQuotes" checked> 引文为主的段落不计入</label>
+      <p class="opt-hint">免费 CPU 上，完整检测约每 1 万字 1.5 分钟（20 万字约 25–30 分钟）；快速检测无论多长约 3–5 分钟。检测在服务器后台进行，可以关掉页面稍后用同一 Key 查询（结果保留 1 小时）。</p>
+    </div>
+    <div class="input-footer">
+      <span class="char-count" id="charCount">0 字</span>
+      <button id="analyzeBtn" class="primary-btn" disabled>开始检测</button>
+    </div>
+  </section>
+
+  <section class="progress-zone hidden" id="progressZone">
+    <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+    <p class="progress-label" id="progressLabel">准备中…</p>
+  </section>
+
+  <p class="error-box hidden" id="errorBox" role="alert"></p>
+
+  <section class="results-zone hidden" id="resultsZone">
+    <div class="summary-row">
+      <div class="summary-card"><span class="summary-num" id="sumRate">—</span><span class="summary-label">AI 率（按字数）</span></div>
+      <div class="summary-card"><span class="summary-num" id="sumMean">—</span><span class="summary-label">平均 AI 概率</span></div>
+      <div class="summary-card"><span class="summary-num" id="sumFlagged">—</span><span class="summary-label">疑似段落 / 计入段落</span></div>
+      <div class="summary-card"><span class="summary-num" id="sumExcluded">—</span><span class="summary-label">未计入字数</span></div>
+      <button id="exportBtn" class="ghost-btn">导出报告 (.txt)</button>
+    </div>
+    <p class="calib-line" id="calibLine"></p>
+
+    <div class="legend">
+      <span class="legend-item"><i class="dot dot-high"></i>高度疑似</span>
+      <span class="legend-item"><i class="dot dot-mid"></i>疑似</span>
+      <span class="legend-item"><i class="dot dot-low"></i>未达阈值</span>
+      <span class="legend-item"><i class="dot dot-none"></i>未计入</span>
+      <label class="legend-item filter"><input type="checkbox" id="onlyFlagged"> 只看疑似段落</label>
+    </div>
+    <div class="paragraph-list" id="paragraphList"></div>
+
+    <div class="section-block" id="formatSection">
+      <h2 class="section-title">标点与排版格式检查</h2>
+      <p class="section-hint">在浏览器里完成，不上传。查三类问题：① 规避检测的痕迹（隐藏文字、白色文字、零宽字符、形近字母替换等）；② 标点是否规范；③ 字体、字号、行距、缩进、表格、修订、文档属性等是否统一。上传 .docx 能检查的项目最全。</p>
+      <div class="format-grid" id="formatGrid"></div>
+      <div class="format-detail" id="formatDetail"></div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <a href="/admin">管理页（签发 Key、校准）</a> · <a href="/docs">API 文档</a> · <a href="/health">运行状态</a>
+  </footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

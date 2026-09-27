@@ -1,0 +1,25 @@
+# 每次推送或提交 Pull Request 时，检查 Cloudflare 网站代码能否正常打包。
+# （Cloudflare 本身的部署由 Cloudflare 的自动构建完成，不在这里。）
+name: 检查 Cloudflare 网站代码
+
+on:
+  push:
+    paths-ignore: ["hf-space/**"]
+  pull_request:
+
+jobs:
+  worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: 打包 worker.js 并检查语法
+        run: |
+          node build.mjs
+          node --check worker.js
+          node --check pages-static/app.js
+      - name: 试打包（不会真正部署）
+        run: npx -y wrangler@4 deploy --dry-run --outdir /tmp/wrangler-out
