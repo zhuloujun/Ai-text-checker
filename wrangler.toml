@@ -1,4 +1,4 @@
-# GitHub Actions 自动部署和命令行部署都读取这个文件。
+# Cloudflare 自动构建和命令行部署都读取这个文件。
 # name 必须与 Cloudflare 上的 Worker 名称一致，不要随意修改。
 name = "ai-text-checker"
 main = "worker.js"
