@@ -12,6 +12,8 @@ short_description: 中文论文 AI 文本检测：Fast-DetectGPT + Binoculars + 
 
 # 审读 · 中文论文 AI 文本检测（自部署版）
 
+> 本 Space 由 GitHub 仓库 [zhuloujun/Ai-text-checker](https://github.com/zhuloujun/Ai-text-checker) 的 `hf-space/` 文件夹自动同步，请在 GitHub 上修改代码，不要直接改这里的文件（会被下次同步覆盖）。
+
 部署在你自己的 Hugging Face Space 上，免费 CPU 即可运行；自己签发 API Key，不依赖任何付费检测服务。
 
 ## 它怎么判断
