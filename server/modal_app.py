@@ -3,7 +3,7 @@
 部署：modal deploy modal_app.py （GitHub Actions 会自动执行，见仓库根目录 README）
 网址：https://zhuloujun--ai-text-checker-web.modal.run
 
-计费说明：Modal 每月送 $30 免费额度，只在容器运行时计费。
+计费说明：Modal 每月送 $30 免费额度（需绑定付款方式；未绑定时为 $1），只在容器运行时计费。
 没人访问时容器会在 scaledown_window（10 分钟）后自动关闭，不再计费；
 下次访问会自动启动，约需 1 分钟加载模型。
 """
