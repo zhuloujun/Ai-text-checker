@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>审读 · 文本特征检测</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="sheet">
+
+  <header class="masthead">
+    <div class="masthead-left">
+      <h1 class="title">审读</h1>
+      <p class="subtitle">文本统计特征检测 · 本地运行，不上传服务器</p>
+    </div>
+    <div class="masthead-right">
+      <div class="seal" id="seal" aria-hidden="true">
+        <span class="seal-num" id="sealNum">—</span>
+        <span class="seal-label">综合疑似度</span>
+      </div>
+    </div>
+  </header>
+
+  <section class="notice">
+    <p><strong>方法说明：</strong>本地的"疑似度"基于句长突发性、n-gram 重复率、AI 高频过渡词密度等统计启发式特征，<strong>不是</strong>神经网络分类模型，准确率低于知网 AIGC 检测 / Turnitin / Lynote 等商用系统。学术论文（尤其含大量引文、术语、固定表述的史学 / 人文社科类文本）容易被误判，<strong>请勿单独作为投稿或查重决策依据</strong>。</p>
+  </section>
+
+  <section class="input-zone" id="inputZone">
+    <div class="input-tabs">
+      <button class="tab-btn active" data-tab="paste">粘贴文本</button>
+      <button class="tab-btn" data-tab="upload">上传文档</button>
+    </div>
+
+    <div class="tab-panel" id="panel-paste">
+      <textarea id="pasteArea" placeholder="将文本粘贴到此处……"></textarea>
+    </div>
+
+    <div class="tab-panel hidden" id="panel-upload">
+      <div class="dropzone" id="dropzone">
+        <p class="dz-main">拖拽文件到此处，或 <label for="fileInput" class="dz-link">点击选择文件</label></p>
+        <p class="dz-sub">支持 .txt / .docx / .pdf，约 20 万字文档亦可处理</p>
+        <input type="file" id="fileInput" accept=".txt,.docx,.pdf" hidden>
+      </div>
+      <div class="file-info hidden" id="fileInfo">
+        <span id="fileName"></span>
+        <span id="fileMeta" class="muted"></span>
+        <button id="fileClear" class="link-btn">移除</button>
+      </div>
+    </div>
+
+    <div class="input-footer">
+      <span class="char-count" id="charCount">0 字</span>
+      <button id="analyzeBtn" class="primary-btn" disabled>开始检测</button>
+    </div>
+  </section>
+
+  <section class="settings-zone">
+    <button class="settings-toggle" id="settingsToggle">
+      <span>⚙ 官方 API 增强检测（可选）</span>
+      <span class="settings-caret" id="settingsCaret">▾</span>
+    </button>
+    <div class="settings-panel hidden" id="settingsPanel">
+      <p class="settings-desc">
+        本地检测（AI 特征 + 标点排版）不需要任何配置，直接可用。<br>
+        勾选下面的选项后，会额外调用 GPTZero 官方模型给出参考分数。<strong>会消耗你自己账户的 API 额度。</strong>
+        Key 有两种提供方式，任选其一：<br>
+        ① 直接填在下面的输入框里：只发送到你自己部署的 Worker，再由 Worker 转发给 GPTZero，不写进代码，也不在服务器上保存；<br>
+        ② 在 Worker 的 Settings → Variables and Secrets 里设置 Secret <code>GPTZERO_API_KEY</code>，这样就不用每次都填。<strong>这时请同时设置 <code>ACCESS_PASSWORD</code></strong>，否则任何拿到你网址的人都能用掉你的额度。
+      </p>
+      <label class="settings-check">
+        <input type="checkbox" id="useApiToggle">
+        <span>启用官方 API 增强检测</span>
+      </label>
+      <div class="key-row">
+        <input type="password" id="apiKeyInput" class="key-input" placeholder="GPTZero API Key（已在 Worker 配置 Secret 则留空）" autocomplete="off" spellcheck="false">
+        <button type="button" class="ghost-btn" id="keyShowBtn">显示</button>
+      </div>
+      <div class="key-row">
+        <input type="password" id="accessPwInput" class="key-input" placeholder="访问密码（仅在使用 Worker 里的 Secret 且设置了 ACCESS_PASSWORD 时需要）" autocomplete="off" spellcheck="false">
+      </div>
+      <label class="settings-check small">
+        <input type="checkbox" id="rememberKey">
+        <span>在本浏览器记住 Key 和密码（只存在你自己的浏览器里，公用电脑不要勾选）</span>
+      </label>
+      <p class="settings-warn" id="apiStatusMsg"></p>
+    </div>
+  </section>
+
+  <section class="progress-zone hidden" id="progressZone">
+    <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+    <p class="progress-label" id="progressLabel">正在解析文档……</p>
+  </section>
+
+  <section class="results-zone hidden" id="resultsZone">
+
+    <div class="summary-row">
+      <div class="summary-card">
+        <span class="summary-num" id="sumOverall">0%</span>
+        <span class="summary-label">综合疑似度</span>
+      </div>
+      <div class="summary-card">
+        <span class="summary-num" id="sumHigh">0</span>
+        <span class="summary-label">高疑似段落</span>
+      </div>
+      <div class="summary-card">
+        <span class="summary-num" id="sumMid">0</span>
+        <span class="summary-label">中等疑似段落</span>
+      </div>
+      <div class="summary-card">
+        <span class="summary-num" id="sumTotal">0</span>
+        <span class="summary-label">总段落数</span>
+      </div>
+      <button id="exportBtn" class="ghost-btn">导出报告 (.txt)</button>
+    </div>
+
+    <div class="legend">
+      <span class="legend-item"><i class="dot dot-high"></i>高疑似 (≥60)</span>
+      <span class="legend-item"><i class="dot dot-mid"></i>中等 (30–59)</span>
+      <span class="legend-item"><i class="dot dot-low"></i>偏人工 (&lt;30)</span>
+    </div>
+
+    <div class="paragraph-list" id="paragraphList"></div>
+
+    <div class="section-block hidden" id="apiSection">
+      <h2 class="section-title">官方 API 检测结果</h2>
+      <div id="apiResultBody"></div>
+    </div>
+
+    <div class="section-block" id="formatSection">
+      <h2 class="section-title">标点与排版格式检查</h2>
+      <p class="section-hint">这一部分和"是否 AI 生成"是两回事，查三类问题：① 规避检测的痕迹（隐藏文字、白色文字、零宽字符、形近字母替换等），检测系统一旦发现通常会人工复核；② 标点是否规范；③ 字体、字号、行距、缩进、表格、修订、文档属性等排版是否统一。点开每一项可以看到说明和原文位置。上传 .docx 能检查的项目最全。</p>
+      <div class="format-grid" id="formatGrid"></div>
+      <div class="format-detail" id="formatDetail"></div>
+    </div>
+
+  </section>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

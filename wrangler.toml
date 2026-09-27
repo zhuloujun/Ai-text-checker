@@ -1,0 +1,5 @@
+# 可选：只有用命令行部署（npx wrangler deploy）时才需要这个文件。
+# 用 Dashboard 在线编辑器部署的话可以忽略。
+name = "shendu"
+main = "worker.js"
+compatibility_date = "2026-09-01"
