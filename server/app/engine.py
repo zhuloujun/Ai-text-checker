@@ -208,8 +208,12 @@ class Engine:
         # 1) 每段按自己的文体用对应的校准参数打分（引文段落的分数只作参考值）
         scored_ids = {s.index for s in scored}
         prof = {}
+        has_short = bool((cal.get("profiles") or {}).get("zh_short"))
         for s in segs:
-            prof[s.index] = scoring.profile_for(cal, s.register)
+            reg = s.register
+            if reg == "zh" and has_short and len(score_text(s)) < config.SHORT_SEGMENT_CHARS:
+                reg = "zh_short"
+            prof[s.index] = scoring.profile_for(cal, reg)
         combos = {s.index: (scoring.combine(results[s.index], prof[s.index][0]) if s.index in scored_ids
                             else {"prob": None, "signals": {}})
                   for s in segs}

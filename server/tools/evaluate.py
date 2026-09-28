@@ -53,10 +53,12 @@ PART_PROFILE = {
     "cl_cal": "zh_classical", "cl_test": "zh_classical",
 }
 PROFILE_PARTS = {
-    "zh": {"fit": ["cal1", "cal2", "cal1s", "cal2s"],
+    "zh": {"fit": ["cal1", "cal2"],
            "eval": [("test", "NLPCC 测试集（训练时未见，含 DeepSeek-V3）"),
-                    ("tests", "NLPCC 测试集截成 80–260 字的短段（含本仓库 AI 读后感 / 散文）"),
                     ("csl", "CSL 学术摘要保留集")]},
+    # 短段（不足 200 字）的信号分布与长段不同，单独校准、单独定阈值，否则短的人写段落误判偏多
+    "zh_short": {"fit": ["cal1s", "cal2s"],
+                 "eval": [("tests", "NLPCC 测试集截成 80–260 字的短段（含本仓库 AI 读后感 / 散文）")]},
     "zh_poetry": {"fit": ["po_cal"], "eval": [("po_test", "ChangAn 保留集（另一批作者 + 没见过的 Kimi-K2 与其他模型的新诗词）")]},
     "en": {"fit": ["en_cal1", "en_cal2"], "eval": [("en_ood", "MAGE：GPT-4 在未见过的领域生成的文本"),
                                                   ("en_para", "MAGE：GPT-4 文本经改写后（含本仓库英文 AI 样本）")]},
@@ -67,6 +69,7 @@ PROFILE_SOURCE = {
     "en": "MAGE（人写文本与 GPT-3.5 / GPT-4 等生成文本）",
     "zh_classical": "NiuTrans 古文语料（人写）+ 大语言模型生成的文言样本",
     "zh_poetry": "ChangAn 当代旧体诗词（人写）+ DeepSeek / 豆包 / GPT-4.1 生成诗词",
+    "zh_short": "NLPCC 2025 Task 1 样本截成 80–260 字的短段",
 }
 
 # 文言：校准用的书 / 评估用的书（互不重叠）
@@ -428,7 +431,7 @@ def stage_fit(args):
         if f.exists():
             parts[name] = json.loads(f.read_text("utf-8"))
     fitted = {}
-    for prof in ("zh", "en", "zh_classical", "zh_poetry"):
+    for prof in ("zh", "zh_short", "en", "zh_classical", "zh_poetry"):
         r = fit_profile(prof, parts, args.target_fpr)
         if r:
             fitted[prof] = r
