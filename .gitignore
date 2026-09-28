@@ -5,3 +5,5 @@ __pycache__/
 .pytest_cache/
 tiny_models/
 .DS_Store
+
+server/poetry-classifier/

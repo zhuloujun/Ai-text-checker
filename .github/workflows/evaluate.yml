@@ -41,7 +41,6 @@ env:
   N_PO_CAL: "800"
   N_PO_TEST: "600"
   PUSH_PARTS: '["po_cal","po_test"]'
-  POETRY_URL: https://github.com/${{ github.repository }}/releases/download/poetry-classifier-v1/poetry-classifier.tar.gz
 
 jobs:
   plan:
@@ -98,10 +97,11 @@ jobs:
           PY
       - name: 下载数据集（诗词：ChangAn）和诗词分类器（本仓库 Release）
         if: ${{ startsWith(matrix.part, 'po_') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           git clone --depth 1 https://github.com/VelikayaScarlet/ChangAn /tmp/changan
-          curl -fsSL --retry 3 "$POETRY_URL" -o /tmp/poetry-classifier.tar.gz
-          ls -la /tmp/poetry-classifier.tar.gz
+          gh release download poetry-classifier-v1 -p poetry-classifier.tar.gz -D /tmp -R "${{ github.repository }}"
           tar xzf /tmp/poetry-classifier.tar.gz -C /tmp
           ls /tmp/poetry-classifier
           echo "POETRY_CLASSIFIER_MODEL=/tmp/poetry-classifier" >> "$GITHUB_ENV"

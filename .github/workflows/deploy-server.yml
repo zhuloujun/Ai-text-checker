@@ -10,6 +10,9 @@ on:
       - ".github/workflows/deploy-server.yml"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: deploy-server
   cancel-in-progress: false
@@ -49,6 +52,16 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install "modal==1.5.5"
+      - name: 取出诗词分类器（仓库是私有的，Release 文件需要用本工作流的令牌下载）
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release download poetry-classifier-v1 -p poetry-classifier.tar.gz -D /tmp -R "${{ github.repository }}"; then
+            tar xzf /tmp/poetry-classifier.tar.gz -C server/
+            ls server/poetry-classifier
+          else
+            echo "::warning::没有找到诗词分类器（Release poetry-classifier-v1），诗词将改用通用中文分类器。"
+          fi
       - name: 部署
         working-directory: server
         env:
