@@ -40,7 +40,8 @@ env:
   N_CL_HUMAN_TEST: "160"
   N_PO_CAL: "800"
   N_PO_TEST: "600"
-  PUSH_PARTS: '["cal1s","cal2s","tests","po_cal","po_test"]'
+  PUSH_PARTS: '["po_cal","po_test"]'
+  POETRY_URL: https://github.com/${{ github.repository }}/releases/download/poetry-classifier-v1/poetry-classifier.tar.gz
 
 jobs:
   plan:
@@ -95,9 +96,13 @@ jobs:
           for f in ["test.csv", "test_ood_set_gpt.csv", "test_ood_set_gpt_para.csv"]:
               print(hf_hub_download("yaful/MAGE", f, repo_type="dataset", local_dir="/tmp/mage"))
           PY
-      - name: 下载数据集（诗词：ChangAn）
+      - name: 下载数据集（诗词：ChangAn）和诗词分类器（本仓库 Release）
         if: ${{ startsWith(matrix.part, 'po_') }}
-        run: git clone --depth 1 https://github.com/VelikayaScarlet/ChangAn /tmp/changan
+        run: |
+          git clone --depth 1 https://github.com/VelikayaScarlet/ChangAn /tmp/changan
+          python server/download_models.py "$POETRY_URL=/tmp/poetry-classifier"
+          ls /tmp/poetry-classifier
+          echo "POETRY_CLASSIFIER_MODEL=/tmp/poetry-classifier" >> "$GITHUB_ENV"
       - name: 下载数据集（文言：NiuTrans 古文语料，只取用到的书）
         if: ${{ startsWith(matrix.part, 'cl_') }}
         run: |
@@ -149,6 +154,7 @@ jobs:
           PERFORMER_MODEL: Qwen/Qwen2.5-0.5B-Instruct
           CLASSIFIER_MODEL: yuchuantian/AIGC_detector_zhv3
           EN_CLASSIFIER_MODEL: desklib/ai-text-detector-v1.01
+          POETRY_CLASSIFIER_MODEL: /tmp/poetry-classifier
         run: |
           mkdir -p tools/scores && cp /tmp/dl/*.json tools/scores/ && ls -la tools/scores
           python tools/evaluate.py --stage fit --scores-dir tools/scores --target-fpr 0.05

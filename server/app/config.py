@@ -32,6 +32,12 @@ CLASSIFIER_AI_LABEL = os.getenv("CLASSIFIER_AI_LABEL", "auto")
 EN_CLASSIFIER_MODEL = os.getenv("EN_CLASSIFIER_MODEL", "desklib/ai-text-detector-v1.01")
 ENABLE_EN_CLASSIFIER = _bool("ENABLE_EN_CLASSIFIER", True)
 EN_CLS_MAX_TOKENS = _int("EN_CLS_MAX_TOKENS", 512)
+# 诗词专用分类器（tools/train_poetry.py 在 ChangAn 上微调，发布在本仓库 Release）。填本地目录；留空则诗词用通用中文分类器。
+POETRY_CLASSIFIER_MODEL = os.getenv("POETRY_CLASSIFIER_MODEL", "")
+POETRY_CLASSIFIER_ID = os.getenv("POETRY_CLASSIFIER_ID", "poetry-classifier-v1")   # 校准参数按这个名字匹配模型
+POETRY_CLASSIFIER_URL = os.getenv(
+    "POETRY_CLASSIFIER_URL",
+    "https://github.com/zhuloujun/Ai-text-checker/releases/download/poetry-classifier-v1/poetry-classifier.tar.gz")
 
 ENABLE_LM = _bool("ENABLE_LM", True)
 ENABLE_CLASSIFIER = _bool("ENABLE_CLASSIFIER", True)
@@ -79,7 +85,11 @@ CALIBRATION_FILE = Path(os.getenv("CALIBRATION_FILE", str(BASE_DIR / "calibratio
 
 
 def classifier_for(register: str) -> str:
-    return EN_CLASSIFIER_MODEL if register == "en" else CLASSIFIER_MODEL
+    if register == "en":
+        return EN_CLASSIFIER_MODEL
+    if register == "zh_poetry" and POETRY_CLASSIFIER_MODEL:
+        return POETRY_CLASSIFIER_ID
+    return CLASSIFIER_MODEL
 
 
 def _models_match(cal: dict, register: str) -> bool:

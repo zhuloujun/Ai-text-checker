@@ -10,8 +10,9 @@
   现代汉语（短段）  同一批 NLPCC 样本截成 80–260 字（在句末截断），让校准覆盖网页上常见的短段落；
             评估另加本仓库自带的 AI 读后感 / 散文 / 随笔样本（tools/data/ai_zh_essays.txt），检验跨文体效果。
   诗词      ChangAn（ACL 2026，https://github.com/VelikayaScarlet/ChangAn，MIT）：当代人写的旧体诗词 7,707 首，
-            DeepSeek、豆包（Seed）、GPT-4.1、Kimi-K2 生成的诗词 2 万余首。按作者划分人写的校准 / 评估集；
-            Kimi-K2 整个模型只用于评估（检验对"没见过的 AI 模型"的效果）。
+            DeepSeek、豆包（Seed）、GPT-4.1、Kimi-K2 生成的诗词 2 万余首。划分见 tools/changan.py（训练 / 校准 / 评估
+            互不重叠，人写按作者、AI 按题目划分）；Kimi-K2 整个模型只用于评估（检验对"没见过的 AI 模型"的效果）。
+            诗词分类器由 tools/train_poetry.py 只用"训练"那一份微调。
   文言      人写：NiuTrans Classical-Modern 古文原文（https://github.com/NiuTrans/Classical-Modern，MIT），
             笔记、志怪、传奇、史传、游记等；校准用一组书，独立评估用另一组书（训练时完全没见过）。
             AI：tools/data/ai_classical_*.txt（由大语言模型生成的 120 段文言，体裁覆盖志怪、传奇、史传、笔记、
@@ -68,7 +69,7 @@ PROFILE_SOURCE = {
     "zh": "NLPCC 2025 Task 1（CSL 学术摘要 / 新闻 / 作文；GPT-4o、GLM-4、Qwen）",
     "en": "MAGE（人写文本与 GPT-3.5 / GPT-4 等生成文本）",
     "zh_classical": "NiuTrans 古文语料（人写）+ 大语言模型生成的文言样本",
-    "zh_poetry": "ChangAn 当代旧体诗词（人写）+ DeepSeek / 豆包 / GPT-4.1 生成诗词",
+    "zh_poetry": "ChangAn 当代旧体诗词（人写）+ DeepSeek / 豆包 / GPT-4.1 生成诗词；诗词专用分类器（ChangAn 训练集微调）",
     "zh_short": "NLPCC 2025 Task 1 样本截成 80–260 字的短段",
 }
 
@@ -184,30 +185,20 @@ def read_xlsx(path, sheet=0):
 
 
 def poetry_parts(args):
-    d = Path(args.changan_dir) / "data"
-    human = [{"text": str(r["Text"]).strip(), "y": 0, "model": "human", "author": str(r["Author"])}
-             for r in read_xlsx(d / "Untouched_Classical_Poetry.xlsx") if r.get("Text")]
-    ai = [{"text": str(r["ai_content"]).strip(), "y": 1, "model": str(r["author"])}
-          for r in read_xlsx(d / "AIGen_Cleaned.xlsx") if r.get("ai_content")]
-    human = [r for r in human if len(r["text"]) >= 16]
-    ai = [r for r in ai if len(r["text"]) >= 16]
-    # 人写：按作者分成校准 / 评估（同一作者不会同时出现在两边）
-    import hashlib
-    held = lambda a: int(hashlib.md5(a.encode("utf-8")).hexdigest(), 16) % 5 == 0
-    h_cal = [r for r in human if not held(r["author"])]
-    h_test = [r for r in human if held(r["author"])]
+    """与诗词分类器的训练共用同一套划分（tools/changan.py）：只用"校准"和"评估"两份，训练数据不会混进来。"""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import changan
+    rows = changan.load(args.changan_dir)
     rnd = random.Random(41)
-    rnd.shuffle(h_cal); rnd.shuffle(h_test)
-    unseen = "kimi-k2"
-    seen = [r for r in ai if r["model"].lower() != unseen]
-    rnd.shuffle(seen)
-    a_cal = balanced_sample(seen[: len(seen) // 2], args.n_po_cal // 2, lambda r: r["model"], 42)
-    a_test_seen = balanced_sample(seen[len(seen) // 2:], args.n_po_test // 4, lambda r: r["model"], 43)
-    a_test_unseen = [r for r in ai if r["model"].lower() == unseen]
-    rnd.shuffle(a_test_unseen)
-    print(f"ChangAn：人写 {len(human)}（校准作者 {len(h_cal)} / 评估作者 {len(h_test)}），AI {len(ai)}", flush=True)
-    return {"po_cal": h_cal[: args.n_po_cal // 2] + a_cal,
-            "po_test": h_test[: args.n_po_test // 2] + a_test_seen + a_test_unseen[: args.n_po_test // 4]}
+    rnd.shuffle(rows)
+    cal = [r for r in rows if r["split"] == "cal"]
+    test = [r for r in rows if r["split"] == "test"]
+    k = args.n_po_cal // 2
+    po_cal = [r for r in cal if r["y"] == 0][:k] + balanced_sample([r for r in cal if r["y"] == 1], k, lambda r: r["model"], 42)
+    kt = args.n_po_test // 2
+    po_test = [r for r in test if r["y"] == 0][:kt] + balanced_sample([r for r in test if r["y"] == 1], kt, lambda r: r["model"], 43)
+    print(f"ChangAn：校准 {len(po_cal)} 首，评估 {len(po_test)} 首（评估含没见过的 {changan.UNSEEN_MODEL}）", flush=True)
+    return {"po_cal": po_cal, "po_test": po_test}
 
 
 def read_mage(path):
@@ -329,7 +320,9 @@ def stage_score(args):
     engine = Engine()
     engine.load_all()
     st = engine.status()
-    need = st["classifier_en"] if prof == "en" else st["classifier"]
+    need = {"en": st["classifier_en"], "zh_poetry": st.get("classifier_poetry") or {}}.get(prof, st["classifier"])
+    if prof == "zh_poetry" and not need.get("enabled"):
+        need = st["classifier"]
     if not (st["lm"].get("ready") and need.get("ready")):
         raise SystemExit(f"模型没有全部加载成功，停止打分：{json.dumps(st, ensure_ascii=False)}")
     segs, labels, meta = [], [], []

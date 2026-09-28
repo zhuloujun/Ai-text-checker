@@ -41,6 +41,7 @@ class Engine:
         self.cls = Classifier() if (config.ENABLE_CLASSIFIER and config.CLASSIFIER_MODEL) else None
         self.cls_en = (make_english_classifier()
                        if (config.ENABLE_EN_CLASSIFIER and config.EN_CLASSIFIER_MODEL) else None)
+        self.cls_poetry = (Classifier(config.POETRY_CLASSIFIER_MODEL, 128) if config.POETRY_CLASSIFIER_MODEL else None)
         self.loading = True
         self.loaded_event = threading.Event()
         self.load_started = time.time()
@@ -73,7 +74,8 @@ class Engine:
 
     def load_all(self):
         try:
-            for name, det in (("语言模型", self.lm), ("中文分类器", self.cls), ("英文分类器", self.cls_en)):
+            for name, det in (("语言模型", self.lm), ("中文分类器", self.cls), ("英文分类器", self.cls_en),
+                              ("诗词分类器", self.cls_poetry)):
                 if det is None:
                     continue
                 try:
@@ -102,6 +104,7 @@ class Engine:
             "lm": st(self.lm, [config.OBSERVER_MODEL, config.PERFORMER_MODEL]),
             "classifier": st(self.cls, config.CLASSIFIER_MODEL),
             "classifier_en": st(self.cls_en, config.EN_CLASSIFIER_MODEL),
+            "classifier_poetry": st(self.cls_poetry, config.POETRY_CLASSIFIER_ID),
             "calibration": {"calibrated": bool(self.cal.get("calibrated")), "source": self.cal_source,
                             "threshold": self.cal.get("threshold"), "note": self.cal.get("note"),
                             "profiles": profiles},
@@ -112,6 +115,9 @@ class Engine:
         return bool((self.lm and self.lm.ready) or (self.cls and self.cls.ready) or (self.cls_en and self.cls_en.ready))
 
     def classifier_for(self, register: str):
+        if register == "zh_poetry" and self.cls_poetry is not None:
+            # 配置了诗词分类器却没加载成功时，不退回通用分类器（校准参数是按诗词分类器拟合的）
+            return self.cls_poetry if self.cls_poetry.ready else None
         det = self.cls_en if register == "en" else self.cls
         return det if (det and det.ready) else None
 
@@ -338,6 +344,7 @@ class Engine:
                     "binoculars": bool(self.lm and self.lm.ready),
                     "classifier": bool(self.cls and self.cls.ready),
                     "classifier_en": bool(self.cls_en and self.cls_en.ready),
+                    "classifier_poetry": bool(self.cls_poetry and self.cls_poetry.ready),
                 },
                 "elapsed_sec": round(time.time() - t_start, 1),
             },

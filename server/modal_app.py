@@ -13,6 +13,9 @@ OBSERVER_MODEL = "Qwen/Qwen2.5-0.5B"
 PERFORMER_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
 CLASSIFIER_MODEL = "yuchuantian/AIGC_detector_zhv3"
 EN_CLASSIFIER_MODEL = "desklib/ai-text-detector-v1.01"   # 英文分类器（DeBERTa-v3-large，约 1.7 GB）
+# 诗词专用分类器：由本仓库 .github/workflows/train-poetry.yml 训练并发布在 Release
+POETRY_URL = "https://github.com/zhuloujun/Ai-text-checker/releases/download/poetry-classifier-v1/poetry-classifier.tar.gz"
+POETRY_DIR = "/models/poetry-classifier"
 CPU_CORES = 8
 
 image = (
@@ -27,10 +30,12 @@ image = (
         "PERFORMER_MODEL": PERFORMER_MODEL,
         "CLASSIFIER_MODEL": CLASSIFIER_MODEL,
         "EN_CLASSIFIER_MODEL": EN_CLASSIFIER_MODEL,
+        "POETRY_CLASSIFIER_MODEL": POETRY_DIR,
     })
     # 构建镜像时就把模型下载进去，启动时不用再下载
     .add_local_file("download_models.py", "/root/download_models.py", copy=True)
-    .run_commands(f"python /root/download_models.py {OBSERVER_MODEL} {PERFORMER_MODEL} {CLASSIFIER_MODEL} {EN_CLASSIFIER_MODEL}")
+    .run_commands(f"python /root/download_models.py {OBSERVER_MODEL} {PERFORMER_MODEL} {CLASSIFIER_MODEL} {EN_CLASSIFIER_MODEL} "
+                  f"{POETRY_URL}={POETRY_DIR}")
     .add_local_dir("app", "/root/app")
     .add_local_dir("static", "/root/static")
 )

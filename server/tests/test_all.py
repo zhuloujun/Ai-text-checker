@@ -13,7 +13,7 @@ if not MD:
 
 os.environ.update({
     "OBSERVER_MODEL": f"{MD}/observer", "PERFORMER_MODEL": f"{MD}/performer", "CLASSIFIER_MODEL": f"{MD}/cls",
-    "EN_CLASSIFIER_MODEL": f"{MD}/desklib_en",
+    "EN_CLASSIFIER_MODEL": f"{MD}/desklib_en", "POETRY_CLASSIFIER_MODEL": f"{MD}/desklib_en/../cls",
     "ADMIN_TOKEN": "test-admin-pw", "LM_MAX_TOKENS": "128", "CALIBRATION_FILE": "/nonexistent/cal.json",
     "MAX_TEXT_CHARS": "300000",
 })
@@ -329,7 +329,8 @@ def test_detect_sync(client):
     j = r.json()
     assert j["status"] == "done"
     s = j["result"]["summary"]
-    assert s["methods"] == {"fastdetect": True, "binoculars": True, "classifier": True, "classifier_en": True}
+    assert s["methods"] == {"fastdetect": True, "binoculars": True, "classifier": True, "classifier_en": True,
+                            "classifier_poetry": True}
     assert 0 <= s["ai_rate"] <= 1 and s["counted_chars"] > 0
     seg = j["result"]["segments"][0]
     assert set(seg["raw"]) >= {"fastdetect", "binoculars", "classifier", "ppl", "lrr", "log_rank", "entropy", "top10", "style_cv"}
@@ -452,3 +453,31 @@ def test_calibrate_one_profile_keeps_others(client):
     assert d["calibration"]["profiles"]["en"]["calibrated"]
     h = client.get("/health").json()["calibration"]["profiles"]
     assert h["en"] is True
+
+
+def test_poetry_uses_poetry_classifier(client):
+    from app import main
+    assert main.engine.cls_poetry is not None and main.engine.cls_poetry.ready
+    h = {"Authorization": "Bearer " + issue(client)}
+    r = client.post("/v1/detect", json={"text": POEM + "\n\n" + MODERN * 3, "wait": True}, headers=h).json()["result"]
+    poem = next(seg for seg in r["segments"] if seg["register"] == "zh_poetry")
+    body = poem["text"][len(poem["title"]):].strip()             # 打分时不含标题
+    assert poem["raw"]["classifier"] == round(main.engine.cls_poetry.predict([body])[0], 4)
+    assert r["summary"]["methods"]["classifier_poetry"] is True
+    assert client.get("/health").json()["classifier_poetry"]["ready"] is True
+
+
+def test_download_models_tarball(tmp_path):
+    import io, sys, tarfile
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    import download_models  # noqa: F401 —— 导入时不会下载任何东西（没有参数）
+    src = tmp_path / "poetry-classifier"
+    src.mkdir()
+    (src / "config.json").write_text("{}")
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+        tf.add(src, arcname="poetry-classifier")
+    tar = tmp_path / "m.tar.gz"
+    tar.write_bytes(buf.getvalue())
+    out = download_models.fetch_tarball(tar.as_uri(), str(tmp_path / "dest" / "model"))
+    assert (out / "config.json").exists()
