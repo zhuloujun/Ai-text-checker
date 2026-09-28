@@ -446,7 +446,7 @@
   "models": {
    "observer": "Qwen/Qwen2.5-0.5B",
    "performer": "Qwen/Qwen2.5-0.5B-Instruct",
-   "classifier": "yuchuantian/AIGC_detector_zhv3"
+   "classifier": "poetry-classifier-v1"
   }
  }
 }

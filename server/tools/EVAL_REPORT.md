@@ -46,7 +46,7 @@
   - 各特征 AUROC：fastdetect 0.9231，binoculars 0.0727，logit_classifier 0.718，fastdetect_norm 0.9208，lrr 0.9413，log_rank 0.0437，entropy 0.1014，top10 0.9411，lp_burstiness 0.5502，style_cv 0.4753，style_phrases 0.5
 
 ## 诗词
-- 数据：ChangAn 当代旧体诗词（人写）+ DeepSeek / 豆包 / GPT-4.1 生成诗词
+- 数据：ChangAn 当代旧体诗词（人写）+ DeepSeek / 豆包 / GPT-4.1 生成诗词；诗词专用分类器（ChangAn 训练集微调）
 - 校准集 400 人写 / 399 AI；阈值 0.765；交叉验证 AUROC 0.8886；特征 fastdetect, binoculars, logit_classifier, fastdetect_norm, lrr, log_rank, entropy, top10, style_cv, style_phrases
 - 特征组合比较（校准集交叉验证 AUROC）：全部特征 0.8886，三个主信号 0.8559，语言模型特征 0.8571 → 选用全部特征
 - **ChangAn 保留集（另一批作者 + 没见过的 Kimi-K2 与其他模型的新诗词）**（300 AI / 300 人写）：AUROC 0.8637；检出率 48.3%；误判率 4.0%
