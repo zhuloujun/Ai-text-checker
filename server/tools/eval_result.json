@@ -1,98 +1,184 @@
 {
- "calibration_report": {
-  "n_human": 392,
-  "n_ai": 396,
-  "auroc": {
-   "fastdetect": 0.929,
-   "binoculars": 0.9366,
-   "classifier": 0.9989,
-   "fastdetect_norm": 0.9414,
-   "lrr": 0.8418,
-   "log_rank": 0.8203,
-   "entropy": 0.7063,
-   "top10": 0.826,
-   "lp_burstiness": 0.6239,
-   "style_cv": 0.8538,
-   "style_phrases": 0.745
-  },
-  "features_used": [
-   "fastdetect",
-   "binoculars",
-   "logit_classifier",
-   "fastdetect_norm",
-   "lrr",
-   "log_rank",
-   "entropy",
-   "top10",
-   "lp_burstiness",
-   "style_cv",
-   "style_phrases"
-  ],
-  "cross_validated": true,
-  "combined_auroc": 0.9993,
-  "threshold": 0.5,
-  "human_flagged_rate": 0.023,
-  "ai_caught_rate": 0.9848,
-  "note": "以上指标用 5 折交叉验证（每次用没参与拟合的样本）算出；样本越多、越接近你要检测的文本，越可信。"
- },
- "evaluation": [
-  {
-   "name": "NLPCC 测试集（训练时未见，含 DeepSeek-V3）",
-   "n_human": 183,
-   "n_ai": 197,
-   "auroc": 0.975,
-   "ai_caught": 0.9086,
-   "human_flagged": 0.0328,
-   "per_signal_auroc": {
-    "fastdetect": 0.8535,
-    "binoculars": 0.1447,
-    "logit_classifier": 0.9733,
-    "fastdetect_norm": 0.8539,
-    "lrr": 0.8526,
-    "log_rank": 0.169,
-    "entropy": 0.2171,
-    "top10": 0.8663,
-    "lp_burstiness": 0.8566,
-    "style_cv": 0.2225,
-    "style_phrases": 0.514
+ "zh": {
+  "calibration_report": {
+   "n_human": 392,
+   "n_ai": 396,
+   "auroc": {
+    "fastdetect": 0.929,
+    "binoculars": 0.9366,
+    "classifier": 0.9989,
+    "fastdetect_norm": 0.9414,
+    "lrr": 0.8418,
+    "log_rank": 0.8203,
+    "entropy": 0.7063,
+    "top10": 0.826,
+    "lp_burstiness": 0.6239,
+    "style_cv": 0.8538,
+    "style_phrases": 0.745
    },
-   "ai_caught_by_model": {}
+   "features_used": [
+    "fastdetect",
+    "binoculars",
+    "logit_classifier",
+    "fastdetect_norm",
+    "lrr",
+    "log_rank",
+    "entropy",
+    "top10",
+    "lp_burstiness",
+    "style_cv",
+    "style_phrases"
+   ],
+   "cross_validated": true,
+   "combined_auroc": 0.9993,
+   "threshold": 0.5,
+   "human_flagged_rate": 0.023,
+   "ai_caught_rate": 0.9848,
+   "note": "以上指标用 5 折交叉验证（每次用没参与拟合的样本）算出；样本越多、越接近你要检测的文本，越可信。"
   },
-  {
-   "name": "CSL 学术摘要保留集",
-   "n_human": 60,
-   "n_ai": 180,
-   "auroc": 1.0,
-   "ai_caught": 1.0,
-   "human_flagged": 0.0,
-   "per_signal_auroc": {
-    "fastdetect": 0.9662,
-    "binoculars": 0.0361,
-    "logit_classifier": 0.9997,
-    "fastdetect_norm": 0.9641,
-    "lrr": 0.9775,
-    "log_rank": 0.0315,
-    "entropy": 0.1517,
-    "top10": 0.9758,
-    "lp_burstiness": 0.5981,
-    "style_cv": 0.215,
-    "style_phrases": 0.8453
+  "evaluation": [
+   {
+    "name": "NLPCC 测试集（训练时未见，含 DeepSeek-V3）",
+    "n_human": 183,
+    "n_ai": 197,
+    "auroc": 0.975,
+    "ai_caught": 0.9086,
+    "human_flagged": 0.0328,
+    "per_signal_auroc": {
+     "fastdetect": 0.8535,
+     "binoculars": 0.1447,
+     "logit_classifier": 0.9733,
+     "fastdetect_norm": 0.8539,
+     "lrr": 0.8526,
+     "log_rank": 0.169,
+     "entropy": 0.2171,
+     "top10": 0.8663,
+     "lp_burstiness": 0.8566,
+     "style_cv": 0.2225,
+     "style_phrases": 0.514
+    },
+    "ai_caught_by_model": {},
+    "human_flagged_by_source": {}
    },
-   "ai_caught_by_model": {
-    "glm": 1.0,
-    "gpt4o": 1.0,
-    "qwen": 1.0
+   {
+    "name": "CSL 学术摘要保留集",
+    "n_human": 60,
+    "n_ai": 180,
+    "auroc": 1.0,
+    "ai_caught": 1.0,
+    "human_flagged": 0.0,
+    "per_signal_auroc": {
+     "fastdetect": 0.9662,
+     "binoculars": 0.0361,
+     "logit_classifier": 0.9997,
+     "fastdetect_norm": 0.9641,
+     "lrr": 0.9775,
+     "log_rank": 0.0315,
+     "entropy": 0.1517,
+     "top10": 0.9758,
+     "lp_burstiness": 0.5981,
+     "style_cv": 0.215,
+     "style_phrases": 0.8453
+    },
+    "ai_caught_by_model": {
+     "glm": 1.0,
+     "gpt4o": 1.0,
+     "qwen": 1.0
+    },
+    "human_flagged_by_source": {
+     "human": 0.0
+    }
    }
+  ],
+  "models": {
+   "observer": "Qwen/Qwen2.5-0.5B",
+   "performer": "Qwen/Qwen2.5-0.5B-Instruct",
+   "classifier": "yuchuantian/AIGC_detector_zhv3"
   }
- ],
- "before_calibration_on_test": {
-  "ai_caught": 0.7665,
-  "human_flagged": 0.071,
-  "auroc": 0.9412
  },
- "models": {
-  "observer": "Qwen/Qwen2.5-0.5B",
-  "performer": "Qwen/Qwen2.5-0.5B-Instruct",
-  "classifier": "yuchuantian/AIGC_detector_zhv3"
+ "zh_classical": {
+  "calibration_report": {
+   "n_human": 236,
+   "n_ai": 80,
+   "auroc": {
+    "fastdetect": 0.8863,
+    "binoculars": 0.8854,
+    "classifier": 0.8352,
+    "fastdetect_norm": 0.8828,
+    "lrr": 0.9029,
+    "log_rank": 0.924,
+    "entropy": 0.8365,
+    "top10": 0.904,
+    "lp_burstiness": 0.5789,
+    "style_cv": 0.6056,
+    "style_phrases": 0.5
+   },
+   "features_used": [
+    "fastdetect",
+    "binoculars",
+    "logit_classifier",
+    "fastdetect_norm",
+    "lrr",
+    "log_rank",
+    "entropy",
+    "top10",
+    "lp_burstiness",
+    "style_cv",
+    "style_phrases"
+   ],
+   "cross_validated": true,
+   "combined_auroc": 0.9427,
+   "threshold": 0.7309,
+   "human_flagged_rate": 0.0466,
+   "ai_caught_rate": 0.775,
+   "note": "以上指标用 5 折交叉验证（每次用没参与拟合的样本）算出；样本越多、越接近你要检测的文本，越可信。"
+  },
+  "evaluation": [
+   {
+    "name": "文言保留集（另一组古籍 + 未参与校准的 AI 文言）",
+    "n_human": 143,
+    "n_ai": 40,
+    "auroc": 0.967,
+    "ai_caught": 0.725,
+    "human_flagged": 0.028,
+    "per_signal_auroc": {
+     "fastdetect": 0.9231,
+     "binoculars": 0.0727,
+     "logit_classifier": 0.718,
+     "fastdetect_norm": 0.9208,
+     "lrr": 0.9413,
+     "log_rank": 0.0437,
+     "entropy": 0.1014,
+     "top10": 0.9411,
+     "lp_burstiness": 0.5502,
+     "style_cv": 0.4753,
+     "style_phrases": 0.5
+    },
+    "ai_caught_by_model": {
+     "llm-classical": 0.725
+    },
+    "human_flagged_by_source": {
+     "入蜀记": 0.0,
+     "唐传奇": 0.0,
+     "困学纪闻": 0.0909,
+     "幽明录": 0.0,
+     "搜神记": 0.0,
+     "新唐书": 0.0909,
+     "旧五代史": 0.0,
+     "明夷待访录": 0.0,
+     "武林旧事": 0.0,
+     "聊斋志异": 0.0,
+     "西湖梦寻": 0.1818,
+     "资治通鉴": 0.0,
+     "金史": 0.0,
+     "陶庵梦忆": 0.0
+    }
+   }
+  ],
+  "models": {
+   "observer": "Qwen/Qwen2.5-0.5B",
+   "performer": "Qwen/Qwen2.5-0.5B-Instruct",
+   "classifier": "yuchuantian/AIGC_detector_zhv3"
+  }
  }
 }
