@@ -18,7 +18,7 @@
 
 ## 现代汉语短段
 - 数据：NLPCC 2025 Task 1 样本截成 80–260 字的短段
-- 校准集 362 人写 / 370 AI；阈值 0.7827；交叉验证 AUROC 0.9974；特征 fastdetect, binoculars, logit_classifier, fastdetect_norm, lrr, log_rank, entropy, top10, lp_burstiness, style_cv, style_phrases
+- 校准集 362 人写 / 370 AI；阈值 0.7826；交叉验证 AUROC 0.9974；特征 fastdetect, binoculars, logit_classifier, fastdetect_norm, lrr, log_rank, entropy, top10, lp_burstiness, style_cv, style_phrases
 - 特征组合比较（校准集交叉验证 AUROC）：全部特征 0.9974，三个主信号 0.997，语言模型特征 0.9425 → 选用全部特征
 - **NLPCC 测试集截成 80–260 字的短段（含本仓库 AI 读后感 / 散文）**（207 AI / 186 人写）：AUROC 0.9276；检出率 74.9%；误判率 2.7%
   - 各来源检出率：repo-ai-zh-essay 96%

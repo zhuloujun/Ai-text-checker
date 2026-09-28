@@ -107,7 +107,7 @@
    "n_human": 362,
    "n_ai": 370,
    "auroc": {
-    "fastdetect": 0.9255,
+    "fastdetect": 0.9256,
     "binoculars": 0.9266,
     "classifier": 0.994,
     "fastdetect_norm": 0.9284,
@@ -134,8 +134,8 @@
    ],
    "cross_validated": true,
    "combined_auroc": 0.9974,
-   "threshold": 0.7827,
-   "human_flagged_rate": 0.0083,
+   "threshold": 0.7826,
+   "human_flagged_rate": 0.011,
    "ai_caught_rate": 0.9324,
    "note": "以上指标用 5 折交叉验证（每次用没参与拟合的样本）算出；样本越多、越接近你要检测的文本，越可信。",
    "feature_selection": {
