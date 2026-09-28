@@ -7,6 +7,11 @@
             校准：test.csv 中人写文本与较强模型（GPT-3.5 / GPT-4 / text-davinci / 大参数 LLaMA 等）的生成文本；
             独立评估：两个"更难"的测试集——GPT-4 在未见过的领域生成的文本（test_ood_set_gpt），
             以及同一批文本经过改写的版本（test_ood_set_gpt_para）；另加本仓库自带的英文 AI 样本（含古文英译）。
+  现代汉语（短段）  同一批 NLPCC 样本截成 80–260 字（在句末截断），让校准覆盖网页上常见的短段落；
+            评估另加本仓库自带的 AI 读后感 / 散文 / 随笔样本（tools/data/ai_zh_essays.txt），检验跨文体效果。
+  诗词      ChangAn（ACL 2026，https://github.com/VelikayaScarlet/ChangAn，MIT）：当代人写的旧体诗词 7,707 首，
+            DeepSeek、豆包（Seed）、GPT-4.1、Kimi-K2 生成的诗词 2 万余首。按作者划分人写的校准 / 评估集；
+            Kimi-K2 整个模型只用于评估（检验对"没见过的 AI 模型"的效果）。
   文言      人写：NiuTrans Classical-Modern 古文原文（https://github.com/NiuTrans/Classical-Modern，MIT），
             笔记、志怪、传奇、史传、游记等；校准用一组书，独立评估用另一组书（训练时完全没见过）。
             AI：tools/data/ai_classical_*.txt（由大语言模型生成的 120 段文言，体裁覆盖志怪、传奇、史传、笔记、
@@ -42,12 +47,17 @@ DATA_DIR = ROOT / "tools" / "data"
 # 每份属于哪种文体
 PART_PROFILE = {
     "cal1": "zh", "cal2": "zh", "test": "zh", "csl": "zh",
+    "cal1s": "zh", "cal2s": "zh", "tests": "zh",
+    "po_cal": "zh_poetry", "po_test": "zh_poetry",
     "en_cal1": "en", "en_cal2": "en", "en_ood": "en", "en_para": "en",
     "cl_cal": "zh_classical", "cl_test": "zh_classical",
 }
 PROFILE_PARTS = {
-    "zh": {"fit": ["cal1", "cal2"], "eval": [("test", "NLPCC 测试集（训练时未见，含 DeepSeek-V3）"),
-                                            ("csl", "CSL 学术摘要保留集")]},
+    "zh": {"fit": ["cal1", "cal2", "cal1s", "cal2s"],
+           "eval": [("test", "NLPCC 测试集（训练时未见，含 DeepSeek-V3）"),
+                    ("tests", "NLPCC 测试集截成 80–260 字的短段（含本仓库 AI 读后感 / 散文）"),
+                    ("csl", "CSL 学术摘要保留集")]},
+    "zh_poetry": {"fit": ["po_cal"], "eval": [("po_test", "ChangAn 保留集（另一批作者 + 没见过的 Kimi-K2 与其他模型的新诗词）")]},
     "en": {"fit": ["en_cal1", "en_cal2"], "eval": [("en_ood", "MAGE：GPT-4 在未见过的领域生成的文本"),
                                                   ("en_para", "MAGE：GPT-4 文本经改写后（含本仓库英文 AI 样本）")]},
     "zh_classical": {"fit": ["cl_cal"], "eval": [("cl_test", "文言保留集（另一组古籍 + 未参与校准的 AI 文言）")]},
@@ -56,6 +66,7 @@ PROFILE_SOURCE = {
     "zh": "NLPCC 2025 Task 1（CSL 学术摘要 / 新闻 / 作文；GPT-4o、GLM-4、Qwen）",
     "en": "MAGE（人写文本与 GPT-3.5 / GPT-4 等生成文本）",
     "zh_classical": "NiuTrans 古文语料（人写）+ 大语言模型生成的文言样本",
+    "zh_poetry": "ChangAn 当代旧体诗词（人写）+ DeepSeek / 豆包 / GPT-4.1 生成诗词",
 }
 
 # 文言：校准用的书 / 评估用的书（互不重叠）
@@ -102,7 +113,10 @@ def read_blocks(path):
 
 def to_segment(text, profile):
     """与正式检测一致：按同样规则分段，取最长的一段正文。
-    现代汉语沿用原来的引文规则（与已提交的打分结果一致）；文言与英文样本本身就是正文，不做引文排除。"""
+    现代汉语沿用原来的引文规则（与已提交的打分结果一致）；文言、诗词与英文样本本身就是正文，不做引文排除。
+    诗词整首作为一段（与网页上"一首诗一段"一致）。"""
+    if profile == "zh_poetry":
+        return text.strip()
     segs = [s.text for s in segment_text(text, True, profile == "zh") if s.counted]
     if not segs:
         return None
@@ -131,6 +145,66 @@ def zh_parts(args):
     half = len(cal) // 2
     conv = lambda rows: [{"text": r["text"], "y": r["label"], "model": r.get("model") or ""} for r in rows]
     return {"cal1": conv(cal[:half]), "cal2": conv(cal[half:]), "test": conv(test_s), "csl": conv(csl_hold)}
+
+
+def truncate_short(text, rnd):
+    """截成 80–260 字，在句末截断（模拟网页上一两段的短窗口）。"""
+    target = rnd.randint(80, 260)
+    if len(text) <= target:
+        return text
+    cut = text[:target]
+    m = list(re.finditer(r"[。！？；」”]", cut))
+    return cut[:m[-1].end()] if m and m[-1].end() >= 60 else cut
+
+
+def zh_short_parts(args):
+    base = zh_parts(args)
+    rnd = random.Random(31)
+    out = {}
+    for name in ("cal1", "cal2", "test"):
+        rows = []
+        for r in base[name]:
+            sg = to_segment(r["text"], "zh")
+            if sg:
+                rows.append(dict(r, text=truncate_short(sg, rnd)))
+        out[name + "s"] = rows
+    out["tests"] += [{"text": t, "y": 1, "model": "repo-ai-zh-essay"} for t in read_blocks(DATA_DIR / "ai_zh_essays.txt")]
+    return out
+
+
+def read_xlsx(path, sheet=0):
+    import openpyxl
+    wb = openpyxl.load_workbook(path, read_only=True)
+    rows = list(wb.worksheets[sheet].iter_rows(values_only=True))
+    head = [str(h).strip() if h is not None else "" for h in rows[0]]
+    return [dict(zip(head, r)) for r in rows[1:]]
+
+
+def poetry_parts(args):
+    d = Path(args.changan_dir) / "data"
+    human = [{"text": str(r["Text"]).strip(), "y": 0, "model": "human", "author": str(r["Author"])}
+             for r in read_xlsx(d / "Untouched_Classical_Poetry.xlsx") if r.get("Text")]
+    ai = [{"text": str(r["ai_content"]).strip(), "y": 1, "model": str(r["author"])}
+          for r in read_xlsx(d / "AIGen_Cleaned.xlsx") if r.get("ai_content")]
+    human = [r for r in human if len(r["text"]) >= 16]
+    ai = [r for r in ai if len(r["text"]) >= 16]
+    # 人写：按作者分成校准 / 评估（同一作者不会同时出现在两边）
+    import hashlib
+    held = lambda a: int(hashlib.md5(a.encode("utf-8")).hexdigest(), 16) % 5 == 0
+    h_cal = [r for r in human if not held(r["author"])]
+    h_test = [r for r in human if held(r["author"])]
+    rnd = random.Random(41)
+    rnd.shuffle(h_cal); rnd.shuffle(h_test)
+    unseen = "kimi-k2"
+    seen = [r for r in ai if r["model"].lower() != unseen]
+    rnd.shuffle(seen)
+    a_cal = balanced_sample(seen[: len(seen) // 2], args.n_po_cal // 2, lambda r: r["model"], 42)
+    a_test_seen = balanced_sample(seen[len(seen) // 2:], args.n_po_test // 4, lambda r: r["model"], 43)
+    a_test_unseen = [r for r in ai if r["model"].lower() == unseen]
+    rnd.shuffle(a_test_unseen)
+    print(f"ChangAn：人写 {len(human)}（校准作者 {len(h_cal)} / 评估作者 {len(h_test)}），AI {len(ai)}", flush=True)
+    return {"po_cal": h_cal[: args.n_po_cal // 2] + a_cal,
+            "po_test": h_test[: args.n_po_test // 2] + a_test_seen + a_test_unseen[: args.n_po_test // 4]}
 
 
 def read_mage(path):
@@ -233,6 +307,10 @@ def classical_parts(args):
 
 def build_part(args, part):
     prof = PART_PROFILE[part]
+    if part in ("cal1s", "cal2s", "tests"):
+        return zh_short_parts(args)[part]
+    if prof == "zh_poetry":
+        return poetry_parts(args)[part]
     if prof == "zh":
         return zh_parts(args)[part]
     if prof == "en":
@@ -254,7 +332,10 @@ def stage_score(args):
     segs, labels, meta = [], [], []
     for r in rows:
         sg = to_segment(r["text"], prof)
-        if sg and len(sg) >= (60 if prof == "zh_classical" else config.SEGMENT_MIN_CHARS):
+        min_len = {"zh_classical": 60, "zh_poetry": 16}.get(prof, config.SEGMENT_MIN_CHARS)
+        if r["y"] == 1 and r.get("model", "").startswith("repo-ai"):
+            min_len = 20      # 本仓库自带的 AI 样本全部保留
+        if sg and len(sg) >= min_len:
             segs.append(sg); labels.append(r["y"]); meta.append(r.get("model") or "")
     print(f"[{args.part}] 文体 {prof}，打分 {len(segs)} 段（人写 {labels.count(0)} / AI {labels.count(1)}）…", flush=True)
     t = time.time(); last = [0.0]
@@ -316,7 +397,19 @@ def fit_profile(prof, parts, target_fpr):
     as_ = [r["s"] for r in cal_rows if r["y"] == 1]
     if len(hs) < 10 or len(as_) < 10:
         return None
-    res = scoring.calibrate(hs, as_, target_fpr, features=scoring.PROFILE_FEATURES.get(prof))
+    fixed = scoring.PROFILE_FEATURES.get(prof)
+    if fixed:
+        res = scoring.calibrate(hs, as_, target_fpr, features=fixed)
+    else:
+        # 在校准集上用 5 折交叉验证比较几组特征，选区分能力最好的（不看评估集，避免"偷看答案"）
+        tried = {}
+        for name, feats in (("全部特征", scoring.EXTENDED_FEATURES), ("三个主信号", scoring.BASE_FEATURES),
+                            ("语言模型特征", [f for f in scoring.EXTENDED_FEATURES if f != "logit_classifier"])):
+            tried[name] = scoring.calibrate(hs, as_, target_fpr, features=feats)
+        best = max(tried, key=lambda k: (tried[k]["report"].get("combined_auroc") or 0))
+        res = tried[best]
+        res["report"]["feature_selection"] = {k: v["report"].get("combined_auroc") for k, v in tried.items()}
+        res["report"]["feature_set"] = best
     cal = res["calibration"]
     cal["models"] = {"observer": config.OBSERVER_MODEL, "performer": config.PERFORMER_MODEL,
                      "classifier": config.classifier_for(prof)}
@@ -335,7 +428,7 @@ def stage_fit(args):
         if f.exists():
             parts[name] = json.loads(f.read_text("utf-8"))
     fitted = {}
-    for prof in ("zh", "en", "zh_classical"):
+    for prof in ("zh", "en", "zh_classical", "zh_poetry"):
         r = fit_profile(prof, parts, args.target_fpr)
         if r:
             fitted[prof] = r
@@ -363,6 +456,9 @@ def stage_fit(args):
         lines.append(f"- 数据：{PROFILE_SOURCE[p]}")
         lines.append(f"- 校准集 {rep['n_human']} 人写 / {rep['n_ai']} AI；阈值 {r['calibration']['threshold']}；"
                      f"交叉验证 AUROC {rep.get('combined_auroc')}；特征 {', '.join(rep.get('features_used') or [])}")
+        if rep.get("feature_selection"):
+            lines.append("- 特征组合比较（校准集交叉验证 AUROC）：" +
+                         "，".join(f"{k} {v}" for k, v in rep["feature_selection"].items()) + f" → 选用{rep['feature_set']}")
         for e in r["evaluation"]:
             parts_txt = [f"AUROC {e['auroc']}"]
             if e["ai_caught"] is not None:
@@ -397,6 +493,9 @@ def main():
     ap.add_argument("--data", help="NLPCC 数据目录（现代汉语）")
     ap.add_argument("--mage-dir", help="MAGE 数据目录（英文）")
     ap.add_argument("--classical-dir", help="NiuTrans Classical-Modern 仓库目录（文言）")
+    ap.add_argument("--changan-dir", help="ChangAn 仓库目录（诗词）")
+    ap.add_argument("--n-po-cal", type=int, default=800)
+    ap.add_argument("--n-po-test", type=int, default=600)
     ap.add_argument("--scores-dir", default="/tmp/eval_scores")
     ap.add_argument("--n-cal", type=int, default=800)
     ap.add_argument("--n-test", type=int, default=400)

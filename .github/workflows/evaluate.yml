@@ -1,9 +1,11 @@
-# 用公开数据集评估检测效果，并为三种文体（现代汉语 / 英文 / 文言）分别生成默认校准参数。
-#   现代汉语：NLPCC 2025 Task 1；英文：MAGE；文言：NiuTrans 古文语料 + 仓库自带的 AI 文言样本
+# 用公开数据集评估检测效果，并为四种文体（现代汉语 / 英文 / 文言 / 诗词）分别生成默认校准参数。
+#   现代汉语：NLPCC 2025 Task 1（长段 + 截短的短段）；英文：MAGE；文言：NiuTrans 古文语料 + 仓库自带的 AI 文言样本；
+#   诗词：ChangAn（ACL 2026）
 # 打分分成多份在多台机器上并行，最后汇总拟合；结果写回仓库：
 #   server/app/default_calibration.json、server/tools/EVAL_REPORT.md、server/tools/scores/*.json
 # 触发：修改 server/tools/ 下的文件并推送（只重新打分英文和文言；现代汉语沿用已提交的打分结果），
-#       或在 Actions 页面手动运行（可选择连现代汉语一起重新打分）。
+#       或在 Actions 页面手动运行（可选择全部重新打分）。
+#   推送时只重新打分 PUSH_PARTS 里列出的几份（其余沿用 server/tools/scores 里已提交的结果）。
 name: 评估并生成默认校准
 
 on:
@@ -16,7 +18,7 @@ on:
   workflow_dispatch:
     inputs:
       include_zh:
-        description: "连现代汉语（NLPCC）一起重新打分（约 2 小时）"
+        description: "全部重新打分（含现代汉语长段、英文、文言，约 2–3 小时）"
         type: boolean
         default: false
 
@@ -35,6 +37,9 @@ env:
   N_EN_TEST: "300"
   N_CL_HUMAN: "240"
   N_CL_HUMAN_TEST: "160"
+  N_PO_CAL: "800"
+  N_PO_TEST: "600"
+  PUSH_PARTS: '["cal1s","cal2s","tests","po_cal","po_test"]'
 
 jobs:
   plan:
@@ -45,9 +50,9 @@ jobs:
       - id: p
         run: |
           if [ "${{ github.event.inputs.include_zh }}" = "true" ]; then
-            echo 'parts=["cal1","cal2","test","csl","en_cal1","en_cal2","en_ood","en_para","cl_cal","cl_test"]' >> "$GITHUB_OUTPUT"
+            echo 'parts=["cal1","cal2","test","csl","cal1s","cal2s","tests","en_cal1","en_cal2","en_ood","en_para","cl_cal","cl_test","po_cal","po_test"]' >> "$GITHUB_OUTPUT"
           else
-            echo 'parts=["en_cal1","en_cal2","en_ood","en_para","cl_cal","cl_test"]' >> "$GITHUB_OUTPUT"
+            echo "parts=$PUSH_PARTS" >> "$GITHUB_OUTPUT"
           fi
 
   score:
@@ -69,7 +74,7 @@ jobs:
       - name: 安装依赖
         run: |
           pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cpu
-          pip install -r server/requirements.txt
+          pip install -r server/requirements.txt openpyxl
       - name: 缓存模型
         uses: actions/cache@v4
         with:
@@ -79,7 +84,7 @@ jobs:
         working-directory: server
         run: python download_models.py Qwen/Qwen2.5-0.5B Qwen/Qwen2.5-0.5B-Instruct yuchuantian/AIGC_detector_zhv3 desklib/ai-text-detector-v1.01
       - name: 下载数据集（现代汉语：NLPCC 2025 Task 1）
-        if: ${{ !startsWith(matrix.part, 'en_') && !startsWith(matrix.part, 'cl_') }}
+        if: ${{ !startsWith(matrix.part, 'en_') && !startsWith(matrix.part, 'cl_') && !startsWith(matrix.part, 'po_') }}
         run: git clone --depth 1 https://github.com/NLP2CT/NLPCC-2025-Task1 /tmp/nlpcc
       - name: 下载数据集（英文：MAGE）
         if: ${{ startsWith(matrix.part, 'en_') }}
@@ -89,6 +94,9 @@ jobs:
           for f in ["test.csv", "test_ood_set_gpt.csv", "test_ood_set_gpt_para.csv"]:
               print(hf_hub_download("yaful/MAGE", f, repo_type="dataset", local_dir="/tmp/mage"))
           PY
+      - name: 下载数据集（诗词：ChangAn）
+        if: ${{ startsWith(matrix.part, 'po_') }}
+        run: git clone --depth 1 https://github.com/VelikayaScarlet/ChangAn /tmp/changan
       - name: 下载数据集（文言：NiuTrans 古文语料，只取用到的书）
         if: ${{ startsWith(matrix.part, 'cl_') }}
         run: |
@@ -108,9 +116,9 @@ jobs:
           TOKENIZERS_PARALLELISM: "false"
         run: |
           python tools/evaluate.py --stage score --part ${{ matrix.part }} --data /tmp/nlpcc/data \
-            --mage-dir /tmp/mage --classical-dir /tmp/classical --scores-dir /tmp/scores \
+            --mage-dir /tmp/mage --classical-dir /tmp/classical --changan-dir /tmp/changan --scores-dir /tmp/scores \
             --n-cal $N_CAL --n-test $N_TEST --n-csl $N_CSL --n-en-cal $N_EN_CAL --n-en-test $N_EN_TEST \
-            --n-cl-human $N_CL_HUMAN --n-cl-human-test $N_CL_HUMAN_TEST
+            --n-cl-human $N_CL_HUMAN --n-cl-human-test $N_CL_HUMAN_TEST --n-po-cal $N_PO_CAL --n-po-test $N_PO_TEST
       - uses: actions/upload-artifact@v4
         with:
           name: scores-${{ matrix.part }}
@@ -127,7 +135,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install numpy
+      - run: pip install numpy openpyxl
       - uses: actions/download-artifact@v4
         with:
           pattern: scores-*
@@ -148,5 +156,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add server/app/default_calibration.json server/tools/EVAL_REPORT.md server/tools/eval_result.json server/tools/scores
-          git commit -m "Update default calibration (modern Chinese, English, classical Chinese)" || exit 0
+          git commit -m "Update default calibration (modern Chinese, English, classical Chinese, poetry)" || exit 0
           for i in 1 2 3; do git pull --rebase origin main && git push origin HEAD:main && break; sleep 5; done

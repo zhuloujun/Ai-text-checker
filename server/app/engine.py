@@ -14,7 +14,7 @@ from . import config, scoring
 from .detectors import stylometry
 from .detectors.classifier import Classifier, make_english_classifier
 from .detectors.lm_scorer import LMScorer
-from .segmenter import REGISTER_NAMES, detect_register, segment_text
+from .segmenter import REGISTER_NAMES, detect_register, min_chars, segment_text
 
 log = logging.getLogger("engine")
 
@@ -24,6 +24,15 @@ def style_scores(text: str, feats: dict | None = None) -> dict:
     f = feats or stylometry.features(text)
     return {"style_cv": f["sentence_len_cv"],
             "style_phrases": len(f["template_phrases"]) / max(len(text), 1) * 1000}
+
+
+def score_text(seg) -> str:
+    """送进模型打分的文字：去掉开头的标题行（标题不是作者的正文，短诗里标题占比又很大）。"""
+    if seg.title and seg.text.startswith(seg.title):
+        rest = seg.text[len(seg.title):].strip()
+        if len(rest) >= 10:
+            return rest
+    return seg.text
 
 
 class Engine:
@@ -86,7 +95,7 @@ class Engine:
                 return {"enabled": False}
             return {"enabled": True, "ready": det.ready, "error": det.error, "model": model}
         profiles = {"zh": bool(self.cal.get("calibrated"))}
-        for k in ("zh_classical", "en"):
+        for k in ("zh_classical", "zh_poetry", "en"):
             profiles[k] = bool(((self.cal.get("profiles") or {}).get(k) or {}).get("calibrated"))
         return {
             "loading": self.loading,
@@ -170,7 +179,7 @@ class Engine:
         results = {s.index: {} for s in segs}
         scored = counted + ref_scored
         # 分类器很快：对所有正文和引文段落都算（按文体选分类器）
-        for s, p in zip(scored, self.classify([s.text for s in scored], [s.register for s in scored])):
+        for s, p in zip(scored, self.classify([score_text(s) for s in scored], [s.register for s in scored])):
             if p is not None:
                 results[s.index]["classifier"] = p
         # 语言模型较慢：快速模式下抽样
@@ -180,7 +189,7 @@ class Engine:
                 if s.index not in lm_ids:
                     continue
                 t0 = time.time()
-                r = self.lm.score(s.text)
+                r = self.lm.score(score_text(s))
                 if r:
                     results[s.index].update(r)
                     dt = time.time() - t0
@@ -192,9 +201,9 @@ class Engine:
                     progress(done, len(lm_ids))
 
         cal = self.cal
-        styles = {s.index: stylometry.features(s.text) for s in scored}
+        styles = {s.index: stylometry.features(score_text(s)) for s in scored}
         for s in scored:
-            results[s.index].update(style_scores(s.text, styles[s.index]))
+            results[s.index].update(style_scores(score_text(s), styles[s.index]))
 
         # 1) 每段按自己的文体用对应的校准参数打分（引文段落的分数只作参考值）
         scored_ids = {s.index for s in scored}
@@ -204,10 +213,13 @@ class Engine:
         combos = {s.index: (scoring.combine(results[s.index], prof[s.index][0]) if s.index in scored_ids
                             else {"prob": None, "signals": {}})
                   for s in segs}
-        # 2) 与相邻正文段落平滑（只在正文段落之间进行）
-        body_idx = [s.index for s in counted]
-        raw_probs = [combos[i]["prob"] for i in body_idx]
-        smoothed = dict(zip(body_idx, scoring.smooth(raw_probs, config.SMOOTHING)))
+        # 2) 与相邻正文段落平滑：只在同一篇作品、同一文体的正文段落之间进行（标题行分开的作品互不影响）
+        smoothed = {}
+        groups: dict = {}
+        for s in counted:
+            groups.setdefault((s.block, s.register), []).append(s.index)
+        for idxs in groups.values():
+            smoothed.update(zip(idxs, scoring.smooth([combos[i]["prob"] for i in idxs], config.SMOOTHING)))
 
         seg_out, counted_chars, prob_weighted = [], 0, 0.0
         chars_by_level = {"high": 0, "mid": 0, "light": 0, "low": 0}
@@ -235,7 +247,7 @@ class Engine:
                     uncalibrated_regs.add(s.register)
             seg_out.append({
                 "index": s.index, "start": s.start, "chars": len(s.text), "text": s.text,
-                "kind": s.kind, "notes": s.notes, "register": s.register,
+                "kind": s.kind, "notes": s.notes, "register": s.register, "block": s.block, "title": s.title,
                 "register_name": REGISTER_NAMES.get(s.register, s.register),
                 "threshold": thr,
                 "prob": None if prob is None else round(prob, 4),
@@ -264,6 +276,9 @@ class Engine:
                                                      for k, v in chars_by_register.items()) + "），各自用对应的模型和阈值判断。")
         for reg in sorted(uncalibrated_regs):
             notes.append(f"{REGISTER_NAMES.get(reg, reg)}部分尚无专门校准，结果只宜作相对参考。")
+        if chars_by_register.get("zh_poetry"):
+            notes.append("诗词对联篇幅短、格律限制多，是公认最难检测的文体（ACL 2026 ChangAn 基准中多数检测器接近随机），"
+                         "诗词部分的结果请只作参考。")
         if chars_by_register.get("zh_classical"):
             notes.append("文言检测难度远高于白话：名篇原文常被模型\"背过\"而显得像 AI，AI 仿写的文言又较少见，"
                          "请把文言部分的结果当作线索而非结论。")
@@ -427,7 +442,7 @@ def run_calibration(engine: Engine, p: dict, progress=None) -> dict:
         out = []
         for t in texts:
             for s in segment_text(t, True, False):
-                if s.counted and len(s.text) >= config.SEGMENT_MIN_CHARS:
+                if s.counted and len(s.text) >= min_chars(s.register):
                     out.append(s)
         return out
 

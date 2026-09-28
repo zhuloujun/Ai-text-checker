@@ -131,6 +131,7 @@ def test_classical_ratio_separates():
     assert detect_register(MODERN) == "zh"
     assert detect_register(CLASSICAL) == "zh_classical"
     assert detect_register(ENGLISH) == "en"
+    assert detect_register(POEM) == "zh_poetry" and detect_register(COUPLET) == "zh_poetry"
 
 
 def test_classical_document_is_counted_and_modern_quotes_excluded():
@@ -142,6 +143,33 @@ def test_classical_document_is_counted_and_modern_quotes_excluded():
     paper = "\n\n".join([MODERN, CLASSICAL, MODERN])
     kinds = [(s.register, s.kind) for s in segment_text(paper)]
     assert ("zh_classical", "quotation") in kinds and kinds.count(("zh", "body")) == 2
+
+
+POEM = "诗·七律《咏春》\n浣花溪畔废园春，牡丹幻作红衫人。\n杜老诗魂传一脉，陈生痴念结三生。\n花馔夜饮情方炽，道士符飞梦已尘。\n青城别后重相见，溪上呼名泪满巾。"
+COUPLET = "对联：\n飞檐斗拱，几回苍烟落照；\n暮鼓晨钟，一枕孤馆秋寒。"
+ESSAY_PARAS = ["读完这篇故事，心中久久不能平静。窗外的风掠过枝头，花影摇曳，恍惚间仿佛也看见一位女子立于残垣之间。",
+               "这是一个关于情的故事，但它的动人之处，恰恰在于那份情的不可能。她的存在本身，便是诗与花的因缘和合。",
+               "而陈生呢？他明知她是异类，却始终无法割舍。这份情，早已超越了色相之惑，成了一种近乎执拗的守护。",
+               "就像每年春天，溪畔的花，依旧会开。"]
+
+
+def test_titles_split_works_and_short_paragraphs_merge():
+    doc = "\n\n".join([POEM, COUPLET, "花落花开——读后感"] + ESSAY_PARAS)
+    segs = segment_text(doc)
+    assert [s.register for s in segs[:2]] == ["zh_poetry", "zh_poetry"]
+    assert segs[0].title.startswith("诗·七律") and segs[1].title == "对联："
+    assert len({s.block for s in segs}) == 3               # 三篇作品
+    essay = [s for s in segs if s.register == "zh"]
+    assert len(essay) <= 2 and all(len(s.text) >= 80 for s in essay)   # 短段落合并成窗口
+    assert "依旧会开" in essay[-1].text                      # 结尾一句并入上一段，不单独成段
+    assert all(s.kind == "body" for s in segs)              # 带标题的诗词是独立作品，照常计入
+
+
+def test_untitled_poem_inside_modern_paper_is_quotation():
+    poem = "浣花溪畔废园春，牡丹幻作红衫人。\n杜老诗魂传一脉，陈生痴念结三生。"
+    paper = "\n\n".join([MODERN * 2, poem, MODERN * 2])
+    kinds = [(s.register, s.kind) for s in segment_text(paper)]
+    assert ("zh_poetry", "quotation") in kinds
 
 
 def test_english_segments_are_longer_and_split_on_sentences():

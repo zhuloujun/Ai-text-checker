@@ -84,13 +84,14 @@
         <input type="file" id="aiFiles" multiple accept=".txt,.docx,.md">
       </div>
     </div>
-    <p class="hint">现代汉语、文言、英文三种文体<strong>分别校准</strong>、互不影响：比如只用文言样本校准，只会更新文言部分的参数。选“自动”时按样本里字数最多的文体确定，其他文体的段落不参与这次校准。</p>
+    <p class="hint">现代汉语、文言、诗词、英文四种文体<strong>分别校准</strong>、互不影响：比如只用文言样本校准，只会更新文言部分的参数。选“自动”时按样本里字数最多的文体确定，其他文体的段落不参与这次校准。</p>
     <div class="form-row" style="margin-top:12px">
       <label>校准哪种文体
         <select id="calProfile">
           <option value="auto" selected>自动判断</option>
           <option value="zh">现代汉语</option>
           <option value="zh_classical">文言</option>
+          <option value="zh_poetry">诗词（含对联）</option>
           <option value="en">英文</option>
         </select>
       </label>

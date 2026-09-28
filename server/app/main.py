@@ -240,7 +240,7 @@ class CalibrateIn(BaseModel):
     human: list[str]
     ai: list[str]
     target_fpr: float = 0.05
-    profile: str = Field("auto", description="auto / zh（现代汉语）/ zh_classical（文言）/ en（英文）")
+    profile: str = Field("auto", description="auto / zh（现代汉语）/ zh_classical（文言）/ zh_poetry（诗词）/ en（英文）")
 
 
 class CalibrationIn(BaseModel):
@@ -273,8 +273,8 @@ def admin_usage(request: Request, x_admin_token: str | None = Header(None)):
 def admin_calibrate(body: CalibrateIn, request: Request, x_admin_token: str | None = Header(None)):
     require_admin(request, x_admin_token)
     ensure_ready()
-    if body.profile not in ("auto", "zh", "zh_classical", "en"):
-        err(400, "bad_profile", "profile 只能是 auto、zh、zh_classical 或 en。")
+    if body.profile not in ("auto", "zh", "zh_classical", "zh_poetry", "en"):
+        err(400, "bad_profile", "profile 只能是 auto、zh、zh_classical、zh_poetry 或 en。")
     if sum(len(t) for t in body.human + body.ai) > config.MAX_TEXT_CHARS:
         err(413, "too_long", f"校准样本总字数超过 {config.MAX_TEXT_CHARS}。")
     return jobs.submit("calibrate", "admin", body.model_dump())

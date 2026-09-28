@@ -231,10 +231,10 @@ def calibrate(human: list[dict], ai: list[dict], target_fpr: float = 0.05, featu
 
 
 # ---------------- 按文体分别校准 ----------------
-# 校准 JSON 的顶层是"现代汉语"参数；profiles 里放其他文体（en 英文、zh_classical 文言）各自的参数。
+# 校准 JSON 的顶层是"现代汉语"参数；profiles 里放其他文体（en 英文、zh_classical 文言、zh_poetry 诗词）各自的参数。
 # 各文体的文字特征差别很大（英文用英文分类器；文言的困惑度分布与白话完全不同），不能共用一套阈值。
 
-PROFILE_NAMES = {"zh": "现代汉语", "zh_classical": "文言", "en": "英文"}
+PROFILE_NAMES = {"zh": "现代汉语", "zh_classical": "文言", "zh_poetry": "诗词", "en": "英文"}
 # 各文体用哪些特征做组合（用训练时没见过的评估集比较后选定，见 tools/EVAL_REPORT.md）：
 # 英文：分类器 + Fast-DetectGPT + Binoculars 三个主信号，在 GPT-4 新领域和改写文本上都优于全部特征；
 # 现代汉语、文言：全部扩展特征更好。

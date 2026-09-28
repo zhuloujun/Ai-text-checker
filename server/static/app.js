@@ -62,7 +62,7 @@ async function refreshHealth(){
     if(health.classifier_en) parts.push(st(health.classifier_en, '英文分类器'));
     const pr = health.calibration.profiles;
     if(pr){
-      const names = { zh:'现代汉语', zh_classical:'文言', en:'英文' };
+      const names = { zh:'现代汉语', zh_classical:'文言', zh_poetry:'诗词', en:'英文' };
       const done = Object.keys(names).filter(k=>pr[k]).map(k=>names[k]);
       parts.push(done.length ? `已校准：${done.join('、')}` : '未校准（结果仅作相对参考）');
     } else {
@@ -293,7 +293,7 @@ async function resumeJob(jobId, text){
 
 /* ---------------- 渲染 ---------------- */
 const SIG_NAME = { fastdetect:'Fast-DetectGPT', binoculars:'Binoculars', classifier:'MPU 分类器', classifier_en:'英文分类器（desklib）' };
-const REG_NAME = { zh:'现代汉语', zh_classical:'文言', en:'英文' };
+const REG_NAME = { zh:'现代汉语', zh_classical:'文言', zh_poetry:'诗词', en:'英文' };
 // 分类器信号的名称随段落文体变化（英文段落用的是英文分类器）
 const sigName = (k, seg)=> k === 'classifier' ? (seg && seg.register === 'en' ? '英文分类器' : 'MPU 中文分类器') : (SIG_NAME[k] || k);
 
