@@ -12,9 +12,19 @@ from pathlib import Path
 from huggingface_hub import snapshot_download
 
 
+def _download(url: str) -> bytes:
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (ai-text-checker model download)"})
+    try:
+        with urllib.request.urlopen(req, timeout=900) as r:
+            return r.read()
+    except Exception as e:  # noqa: BLE001 —— 再用 curl 试一次（处理某些环境下的代理 / 重定向问题）
+        print(f"[warn] urllib 下载失败（{e}），改用 curl", flush=True)
+        import subprocess
+        return subprocess.run(["curl", "-fsSL", "--retry", "3", url], check=True, capture_output=True).stdout
+
+
 def fetch_tarball(url: str, dest: str):
-    with urllib.request.urlopen(url, timeout=600) as r:
-        data = r.read()
+    data = _download(url)
     tmp = Path(tempfile.mkdtemp())
     with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tf:
         tf.extractall(tmp)
@@ -39,7 +49,8 @@ def main(args):
             path = snapshot_download(repo_id=repo, allow_patterns=PATTERNS)
             print(f"[ok] {repo} -> {path}", flush=True)
         except Exception as e:  # noqa: BLE001
-            print(f"[warn] 下载 {repo} 失败：{e}", flush=True)
+            print(f"[warn] 下载 {repo} 失败：{type(e).__name__}: {e}", flush=True)
+            print(f"::warning title=模型下载失败::{repo}：{type(e).__name__}: {e}", flush=True)
 
 
 if __name__ == "__main__":

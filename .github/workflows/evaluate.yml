@@ -100,7 +100,9 @@ jobs:
         if: ${{ startsWith(matrix.part, 'po_') }}
         run: |
           git clone --depth 1 https://github.com/VelikayaScarlet/ChangAn /tmp/changan
-          python server/download_models.py "$POETRY_URL=/tmp/poetry-classifier"
+          curl -fsSL --retry 3 "$POETRY_URL" -o /tmp/poetry-classifier.tar.gz
+          ls -la /tmp/poetry-classifier.tar.gz
+          tar xzf /tmp/poetry-classifier.tar.gz -C /tmp
           ls /tmp/poetry-classifier
           echo "POETRY_CLASSIFIER_MODEL=/tmp/poetry-classifier" >> "$GITHUB_ENV"
       - name: 下载数据集（文言：NiuTrans 古文语料，只取用到的书）
