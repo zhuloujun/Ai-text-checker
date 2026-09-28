@@ -59,7 +59,15 @@ async function refreshHealth(){
     const st = (d, name)=> !d.enabled ? `${name}：未启用` : d.ready ? `${name}：就绪` : d.error ? `${name}：加载失败` : `${name}：加载中`;
     parts.push(st(lm, '语言模型（Fast-DetectGPT / Binoculars）'));
     parts.push(st(cl, '中文分类器'));
-    parts.push(health.calibration.calibrated ? '已校准' : '未校准（结果仅作相对参考）');
+    if(health.classifier_en) parts.push(st(health.classifier_en, '英文分类器'));
+    const pr = health.calibration.profiles;
+    if(pr){
+      const names = { zh:'现代汉语', zh_classical:'文言', en:'英文' };
+      const done = Object.keys(names).filter(k=>pr[k]).map(k=>names[k]);
+      parts.push(done.length ? `已校准：${done.join('、')}` : '未校准（结果仅作相对参考）');
+    } else {
+      parts.push(health.calibration.calibrated ? '已校准' : '未校准（结果仅作相对参考）');
+    }
     if(!health.key_signing_configured && health.requires_key) parts.push('⚠ 管理员尚未设置 ADMIN_TOKEN');
     statusLine.textContent = parts.join(' · ');
     statusLine.classList.toggle('warn', !!(health.loading || (lm.enabled && !lm.ready) || (cl.enabled && !cl.ready)));
@@ -284,7 +292,10 @@ async function resumeJob(jobId, text){
 }
 
 /* ---------------- 渲染 ---------------- */
-const SIG_NAME = { fastdetect:'Fast-DetectGPT', binoculars:'Binoculars', classifier:'MPU 分类器' };
+const SIG_NAME = { fastdetect:'Fast-DetectGPT', binoculars:'Binoculars', classifier:'MPU 分类器', classifier_en:'英文分类器（desklib）' };
+const REG_NAME = { zh:'现代汉语', zh_classical:'文言', en:'英文' };
+// 分类器信号的名称随段落文体变化（英文段落用的是英文分类器）
+const sigName = (k, seg)=> k === 'classifier' ? (seg && seg.register === 'en' ? '英文分类器' : 'MPU 中文分类器') : (SIG_NAME[k] || k);
 
 function renderResult(res){
   const s = res.summary;
@@ -303,6 +314,8 @@ function renderResult(res){
     `使用方法：${escapeHtml(methods)} · 判定阈值 ${pct(s.threshold)} · ` +
     (s.calibrated ? `<b>已校准</b>：${escapeHtml(s.calibration_note||'')}` : '<b>未校准</b>：阈值为经验值，结果只宜作相对参考') +
     ` · 高度 ${pct(s.high_rate)} / 中度 ${pct(s.mid_rate)} / 轻度 ${pct(s.light_rate)}` +
+    (s.chars_by_register && Object.keys(s.chars_by_register).length > 1
+      ? ' · 文体：' + Object.entries(s.chars_by_register).map(([k,v])=>`${REG_NAME[k]||k} ${v} 字`).join('、') : '') +
     ` · 相邻段落平滑 ${s.smoothing}` +
     ` · 用时 ${s.elapsed_sec} 秒` +
     (s.excluded_reference_segments || s.excluded_quotation_segments
@@ -316,7 +329,7 @@ function renderResult(res){
     div.dataset.flagged = (lvl === 'high' || lvl === 'mid' || lvl === 'light') ? '1' : '0';
     const preview = seg.text.length > 280 ? seg.text.slice(0,280) + '……' : seg.text;
     const sig = Object.entries(seg.signals || {}).filter(([,v])=>v!=null)
-      .map(([k,v])=>`<span class="para-tag">${SIG_NAME[k]} ${pct(v)}</span>`).join('');
+      .map(([k,v])=>`<span class="para-tag">${sigName(k, seg)} ${pct(v)}</span>`).join('');
     const raw = seg.raw || {};
     const rawBits = [
       raw.fastdetect!=null ? `Fast-DetectGPT 曲率 ${raw.fastdetect.toFixed(2)}` : '',
@@ -342,7 +355,7 @@ function renderResult(res){
         <div class="para-tags">
           ${seg.label ? `<span class="para-tag strong">${seg.label}</span>` : ''}
           ${kindTag}${sig}
-          <span class="para-tag">第 ${seg.index+1} 段 · ${seg.chars} 字</span>
+          <span class="para-tag">第 ${seg.index+1} 段 · ${REG_NAME[seg.register] || '现代汉语'} · ${seg.chars} 字</span>
         </div>
         ${rawBits ? `<details class="para-raw"><summary>原始分数</summary><p>${escapeHtml(rawBits)}</p></details>` : ''}
       </div>`;
@@ -367,16 +380,17 @@ exportBtn.addEventListener('click', ()=>{
   out += `总字数：${s.total_chars} · 计入字数：${s.counted_chars} · 未计入：${s.excluded_chars}\n`;
   out += `AI 率：${pct(s.ai_rate)}（高度 ${pct(s.high_rate)} / 中度 ${pct(s.mid_rate)} / 轻度 ${pct(s.light_rate)}） · 平均 AI 概率：${pct(s.mean_prob)} · 阈值：${pct(s.threshold)} · ${s.calibrated ? '已校准' : '未校准'}\n`;
   (s.reliability_notes || []).forEach(n=>{ out += `提示：${n}\n`; });
-  out += `方法：Fast-DetectGPT、Binoculars（Qwen2.5 打分）、MPU 中文分类器；模式：${s.mode === 'fast' ? '快速（抽样）' : '完整'}\n`;
+  out += `方法：Fast-DetectGPT、Binoculars（Qwen2.5 打分）、MPU 中文分类器、desklib 英文分类器（按段落文体选用）；模式：${s.mode === 'fast' ? '快速（抽样）' : '完整'}\n`;
+  if(s.chars_by_register) out += `文体：${Object.entries(s.chars_by_register).map(([k,v])=>`${REG_NAME[k]||k} ${v} 字`).join('、')}\n`;
   out += `\n【说明】任何 AI 检测都有误判，本报告只供作者自查，不能作为学术不端判定依据。\n`;
   out += `\n${'='.repeat(60)}\n分段结果\n${'='.repeat(60)}\n`;
   lastResult.segments.forEach(seg=>{
     const tag = seg.kind === 'reference' ? '参考文献，不计入' : seg.kind === 'quotation' ? '引文为主，不计入' : (seg.label || '未达阈值');
     const probStr = seg.prob!=null ? pct(seg.prob) : seg.ref_prob!=null ? `${pct(seg.ref_prob)}（参考值，不计入）` : '—';
-    out += `\n[第 ${seg.index+1} 段 | AI 概率 ${probStr} | ${tag} | ${seg.chars} 字]\n`;
+    out += `\n[第 ${seg.index+1} 段 | ${REG_NAME[seg.register] || '现代汉语'} | AI 概率 ${probStr} | ${tag} | ${seg.chars} 字]\n`;
     const sg = seg.signals || {}, r = seg.raw || {};
     const bits = [
-      sg.classifier!=null ? `分类器 ${pct(sg.classifier)}` : (r.classifier!=null ? `分类器 ${pct(r.classifier)}` : ''),
+      r.classifier!=null ? `${sigName('classifier', seg)} ${pct(r.classifier)}` : `${sigName('classifier', seg)} 未运行`,
       r.fastdetect!=null ? `Fast-DetectGPT 曲率 ${r.fastdetect.toFixed(3)}` : '',
       r.binoculars!=null ? `Binoculars ${r.binoculars.toFixed(3)}` : '',
       r.ppl!=null ? `困惑度 ${Math.exp(r.ppl).toFixed(1)}` : '',

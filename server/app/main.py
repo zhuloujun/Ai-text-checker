@@ -34,7 +34,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import config, docparse, keys
+from . import config, docparse, keys, scoring
 from .engine import Engine, JobQueue
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -119,9 +119,8 @@ def require_admin(request: Request, token: str | None):
 
 
 def ensure_ready():
-    if not engine.any_ready():
-        if engine.loading:
-            err(503, "loading", "模型正在加载（服务刚启动或刚被唤醒时需要约 1–3 分钟），请稍后重试。")
+    # 模型还在加载时照常接收任务：任务会排队，等全部模型加载完再开始打分
+    if not engine.loading and not engine.any_ready():
         err(503, "no_detector", "没有可用的检测模型，请查看 /health 里的错误信息。")
 
 
@@ -241,6 +240,7 @@ class CalibrateIn(BaseModel):
     human: list[str]
     ai: list[str]
     target_fpr: float = 0.05
+    profile: str = Field("auto", description="auto / zh（现代汉语）/ zh_classical（文言）/ en（英文）")
 
 
 class CalibrationIn(BaseModel):
@@ -273,6 +273,8 @@ def admin_usage(request: Request, x_admin_token: str | None = Header(None)):
 def admin_calibrate(body: CalibrateIn, request: Request, x_admin_token: str | None = Header(None)):
     require_admin(request, x_admin_token)
     ensure_ready()
+    if body.profile not in ("auto", "zh", "zh_classical", "en"):
+        err(400, "bad_profile", "profile 只能是 auto、zh、zh_classical 或 en。")
     if sum(len(t) for t in body.human + body.ai) > config.MAX_TEXT_CHARS:
         err(413, "too_long", f"校准样本总字数超过 {config.MAX_TEXT_CHARS}。")
     return jobs.submit("calibrate", "admin", body.model_dump())
@@ -293,9 +295,12 @@ def admin_apply(body: CalibrationIn, request: Request, x_admin_token: str | None
     cal = body.calibration
     if "signals" not in cal or "threshold" not in cal:
         err(400, "bad_calibration", "校准参数格式不正确。")
+    # 只替换这次校准的文体，其他文体的校准保持不变
+    cal = scoring.merge_profile(engine.cal, cal, cal.get("profile") or "zh")
     engine.set_calibration(cal, "管理页面（运行时，重启后失效）")
     try:
         Path(config.CALIBRATION_FILE).write_text(json.dumps(cal, ensure_ascii=False, indent=2), "utf-8")
     except OSError:
         pass
-    return {"ok": True, "message": "已启用。服务重启后会恢复原设置：请在 GitHub 仓库 Settings → Secrets and variables → Actions 的 Variables 里新建 CALIBRATION_JSON，值为这段 JSON，然后重新部署。"}
+    return {"ok": True, "calibration": cal,
+            "message": "已启用。服务重启后会恢复原设置：请在 GitHub 仓库 Settings → Secrets and variables → Actions 的 Variables 里新建 CALIBRATION_JSON，值为下面这段完整 JSON（已合并各文体的校准），然后重新部署。"}

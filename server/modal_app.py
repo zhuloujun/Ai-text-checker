@@ -5,13 +5,14 @@
 
 计费说明：Modal 每月送 $30 免费额度（需绑定付款方式；未绑定时为 $1），只在容器运行时计费。
 没人访问时容器会在 scaledown_window（10 分钟）后自动关闭，不再计费；
-下次访问会自动启动，约需 1 分钟加载模型。
+下次访问会自动启动，约需 1–2 分钟加载模型（加载完成前提交的检测会排队等待）。
 """
 import modal
 
 OBSERVER_MODEL = "Qwen/Qwen2.5-0.5B"
 PERFORMER_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
 CLASSIFIER_MODEL = "yuchuantian/AIGC_detector_zhv3"
+EN_CLASSIFIER_MODEL = "desklib/ai-text-detector-v1.01"   # 英文分类器（DeBERTa-v3-large，约 1.7 GB）
 CPU_CORES = 8
 
 image = (
@@ -25,10 +26,11 @@ image = (
         "OBSERVER_MODEL": OBSERVER_MODEL,
         "PERFORMER_MODEL": PERFORMER_MODEL,
         "CLASSIFIER_MODEL": CLASSIFIER_MODEL,
+        "EN_CLASSIFIER_MODEL": EN_CLASSIFIER_MODEL,
     })
     # 构建镜像时就把模型下载进去，启动时不用再下载
     .add_local_file("download_models.py", "/root/download_models.py", copy=True)
-    .run_commands(f"python /root/download_models.py {OBSERVER_MODEL} {PERFORMER_MODEL} {CLASSIFIER_MODEL}")
+    .run_commands(f"python /root/download_models.py {OBSERVER_MODEL} {PERFORMER_MODEL} {CLASSIFIER_MODEL} {EN_CLASSIFIER_MODEL}")
     .add_local_dir("app", "/root/app")
     .add_local_dir("static", "/root/static")
 )

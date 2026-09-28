@@ -28,6 +28,10 @@ PERFORMER_MODEL = os.getenv("PERFORMER_MODEL", "Qwen/Qwen2.5-0.5B-Instruct")
 CLASSIFIER_MODEL = os.getenv("CLASSIFIER_MODEL", "yuchuantian/AIGC_detector_zhv3")
 # 分类器中哪个标签表示"AI 生成"。auto = 按标签名自动判断，判断不了时取下标 1。
 CLASSIFIER_AI_LABEL = os.getenv("CLASSIFIER_AI_LABEL", "auto")
+# 英文 AI 文本分类器（desklib，DeBERTa-v3-large，RAID 基准）。留空则英文只用语言模型特征。
+EN_CLASSIFIER_MODEL = os.getenv("EN_CLASSIFIER_MODEL", "desklib/ai-text-detector-v1.01")
+ENABLE_EN_CLASSIFIER = _bool("ENABLE_EN_CLASSIFIER", True)
+EN_CLS_MAX_TOKENS = _int("EN_CLS_MAX_TOKENS", 512)
 
 ENABLE_LM = _bool("ENABLE_LM", True)
 ENABLE_CLASSIFIER = _bool("ENABLE_CLASSIFIER", True)
@@ -39,11 +43,14 @@ CLS_MAX_TOKENS = _int("CLS_MAX_TOKENS", 512)
 # ---------- 分段 ----------
 SEGMENT_TARGET_CHARS = _int("SEGMENT_TARGET_CHARS", 400)
 SEGMENT_MIN_CHARS = _int("SEGMENT_MIN_CHARS", 80)
+SEGMENT_TARGET_CHARS_EN = _int("SEGMENT_TARGET_CHARS_EN", 1000)   # 英文约 170 词
+SEGMENT_MIN_CHARS_EN = _int("SEGMENT_MIN_CHARS_EN", 200)
 FAST_MODE_MAX_SEGMENTS = _int("FAST_MODE_MAX_SEGMENTS", 60)  # 快速模式下语言模型最多检测多少段
 # 相邻段落平滑强度（0 = 不平滑，0.3 = 本段 70% + 相邻段 30%）
 SMOOTHING = float(os.getenv("SMOOTHING", "0.3") or 0.3)
 # 文言虚词（之乎者也矣焉哉曰…）占汉字比例超过此值的段落，视为以古籍引文为主，不计入 AI 率
-CLASSICAL_THRESHOLD = float(os.getenv("CLASSICAL_THRESHOLD", "0.07") or 0.07)
+CLASSICAL_THRESHOLD = float(os.getenv("CLASSICAL_THRESHOLD", "0.03") or 0.03)
+MODERN_MAX_RATIO = float(os.getenv("MODERN_MAX_RATIO", "0.015") or 0.015)
 
 # ---------- 限制 ----------
 MAX_TEXT_CHARS = _int("MAX_TEXT_CHARS", 300_000)
@@ -65,26 +72,56 @@ DEFAULT_DAILY_CHARS = _int("DEFAULT_DAILY_CHARS", 1_000_000)
 CALIBRATION_FILE = Path(os.getenv("CALIBRATION_FILE", str(BASE_DIR / "calibration.json")))
 
 
-def load_calibration_override():
-    raw = os.getenv("CALIBRATION_JSON", "").strip()
-    if raw:
-        try:
-            return json.loads(raw), "环境变量 CALIBRATION_JSON"
-        except json.JSONDecodeError:
-            pass
-    if CALIBRATION_FILE.exists():
-        try:
-            return json.loads(CALIBRATION_FILE.read_text("utf-8")), f"文件 {CALIBRATION_FILE.name}"
-        except (OSError, json.JSONDecodeError):
-            pass
-    # 随代码发布的默认校准（由 tools/evaluate.py 用公开数据集生成）；模型不一致时不用
+def classifier_for(register: str) -> str:
+    return EN_CLASSIFIER_MODEL if register == "en" else CLASSIFIER_MODEL
+
+
+def _models_match(cal: dict, register: str) -> bool:
+    m = cal.get("models") or {}
+    if not m:
+        return True
+    return (m.get("observer"), m.get("performer"), m.get("classifier")) == (
+        OBSERVER_MODEL, PERFORMER_MODEL, classifier_for(register))
+
+
+def _filter_profiles(cal: dict) -> dict:
+    """去掉与当前模型不一致的文体校准（换了模型，旧参数就不适用了）。"""
+    profs = {k: v for k, v in (cal.get("profiles") or {}).items() if isinstance(v, dict) and _models_match(v, k)}
+    out = dict(cal)
+    if profs:
+        out["profiles"] = profs
+    else:
+        out.pop("profiles", None)
+    return out
+
+
+def load_default_calibration():
+    """随代码发布的默认校准（由 tools/evaluate.py 用公开数据集生成）。"""
     default = Path(__file__).resolve().parent / "default_calibration.json"
     if default.exists():
         try:
             cal = json.loads(default.read_text("utf-8"))
-            m = cal.get("models") or {}
-            if (m.get("observer"), m.get("performer"), m.get("classifier")) == (OBSERVER_MODEL, PERFORMER_MODEL, CLASSIFIER_MODEL):
-                return cal, "内置默认校准（公开数据集 NLPCC 2025）"
+            cal = _filter_profiles(cal)
+            if not _models_match(cal, "zh"):
+                # 现代汉语部分不适用时，只保留仍适用的文体校准
+                return ({"profiles": cal["profiles"]} if cal.get("profiles") else None)
+            return cal
         except (OSError, json.JSONDecodeError):
             pass
-    return None, "内置经验值（未校准）"
+    return None
+
+
+def load_calibration_override():
+    """管理员自己的校准：环境变量 CALIBRATION_JSON 优先，其次 calibration.json。"""
+    raw = os.getenv("CALIBRATION_JSON", "").strip()
+    if raw:
+        try:
+            return _filter_profiles(json.loads(raw)), "环境变量 CALIBRATION_JSON"
+        except json.JSONDecodeError:
+            pass
+    if CALIBRATION_FILE.exists():
+        try:
+            return _filter_profiles(json.loads(CALIBRATION_FILE.read_text("utf-8"))), f"文件 {CALIBRATION_FILE.name}"
+        except (OSError, json.JSONDecodeError):
+            pass
+    return None, None

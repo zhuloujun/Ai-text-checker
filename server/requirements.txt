@@ -6,3 +6,5 @@ python-multipart>=0.0.9
 pdfminer.six>=20231228
 numpy>=1.26
 huggingface_hub>=0.24
+sentencepiece>=0.2
+protobuf>=4

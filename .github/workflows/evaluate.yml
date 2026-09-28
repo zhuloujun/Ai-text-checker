@@ -1,7 +1,9 @@
-# 用公开数据集（NLPCC 2025 中文 AI 文本检测）评估检测效果，并生成默认校准参数。
-# 打分分成 4 份在 4 台机器上并行，最后汇总拟合；结果写回仓库：
+# 用公开数据集评估检测效果，并为三种文体（现代汉语 / 英文 / 文言）分别生成默认校准参数。
+#   现代汉语：NLPCC 2025 Task 1；英文：MAGE；文言：NiuTrans 古文语料 + 仓库自带的 AI 文言样本
+# 打分分成多份在多台机器上并行，最后汇总拟合；结果写回仓库：
 #   server/app/default_calibration.json、server/tools/EVAL_REPORT.md、server/tools/scores/*.json
-# 触发：修改 server/tools/ 下的 .py 文件并推送，或在 Actions 页面手动运行。
+# 触发：修改 server/tools/ 下的文件并推送（只重新打分英文和文言；现代汉语沿用已提交的打分结果），
+#       或在 Actions 页面手动运行（可选择连现代汉语一起重新打分）。
 name: 评估并生成默认校准
 
 on:
@@ -9,8 +11,14 @@ on:
     branches: [main]
     paths:
       - "server/tools/*.py"
+      - "server/tools/data/**"
       - ".github/workflows/evaluate.yml"
   workflow_dispatch:
+    inputs:
+      include_zh:
+        description: "连现代汉语（NLPCC）一起重新打分（约 2 小时）"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -23,16 +31,34 @@ env:
   N_CAL: "800"
   N_TEST: "400"
   N_CSL: "240"
+  N_EN_CAL: "600"
+  N_EN_TEST: "300"
+  N_CL_HUMAN: "240"
+  N_CL_HUMAN_TEST: "160"
 
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      parts: ${{ steps.p.outputs.parts }}
+    steps:
+      - id: p
+        run: |
+          if [ "${{ github.event.inputs.include_zh }}" = "true" ]; then
+            echo 'parts=["cal1","cal2","test","csl","en_cal1","en_cal2","en_ood","en_para","cl_cal","cl_test"]' >> "$GITHUB_OUTPUT"
+          else
+            echo 'parts=["en_cal1","en_cal2","en_ood","en_para","cl_cal","cl_test"]' >> "$GITHUB_OUTPUT"
+          fi
+
   score:
     name: 打分 ${{ matrix.part }}
+    needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
-        part: [cal1, cal2, test, csl]
+        part: ${{ fromJSON(needs.plan.outputs.parts) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -48,12 +74,33 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface
-          key: hf-models-qwen05-mpu-zhv3
+          key: hf-models-qwen05-mpu-zhv3-desklib
       - name: 下载模型
         working-directory: server
-        run: python download_models.py Qwen/Qwen2.5-0.5B Qwen/Qwen2.5-0.5B-Instruct yuchuantian/AIGC_detector_zhv3
-      - name: 下载数据集（NLPCC 2025 Task 1）
+        run: python download_models.py Qwen/Qwen2.5-0.5B Qwen/Qwen2.5-0.5B-Instruct yuchuantian/AIGC_detector_zhv3 desklib/ai-text-detector-v1.01
+      - name: 下载数据集（现代汉语：NLPCC 2025 Task 1）
+        if: ${{ !startsWith(matrix.part, 'en_') && !startsWith(matrix.part, 'cl_') }}
         run: git clone --depth 1 https://github.com/NLP2CT/NLPCC-2025-Task1 /tmp/nlpcc
+      - name: 下载数据集（英文：MAGE）
+        if: ${{ startsWith(matrix.part, 'en_') }}
+        run: |
+          python - <<'PY'
+          from huggingface_hub import hf_hub_download
+          for f in ["test.csv", "test_ood_set_gpt.csv", "test_ood_set_gpt_para.csv"]:
+              print(hf_hub_download("yaful/MAGE", f, repo_type="dataset", local_dir="/tmp/mage"))
+          PY
+      - name: 下载数据集（文言：NiuTrans 古文语料，只取用到的书）
+        if: ${{ startsWith(matrix.part, 'cl_') }}
+        run: |
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/NiuTrans/Classical-Modern /tmp/classical
+          cd /tmp/classical
+          git sparse-checkout set --no-cone $(python3 - <<'PY'
+          import sys; sys.path.insert(0, "${{ github.workspace }}/server/tools")
+          from evaluate import CLASSICAL_CAL_BOOKS, CLASSICAL_TEST_BOOKS
+          print(" ".join(f"/古文原文/{b}/" for b in CLASSICAL_CAL_BOOKS + CLASSICAL_TEST_BOOKS))
+          PY
+          )
+          ls 古文原文 | head -40
       - name: 打分
         working-directory: server
         env:
@@ -61,7 +108,9 @@ jobs:
           TOKENIZERS_PARALLELISM: "false"
         run: |
           python tools/evaluate.py --stage score --part ${{ matrix.part }} --data /tmp/nlpcc/data \
-            --scores-dir /tmp/scores --n-cal $N_CAL --n-test $N_TEST --n-csl $N_CSL
+            --mage-dir /tmp/mage --classical-dir /tmp/classical --scores-dir /tmp/scores \
+            --n-cal $N_CAL --n-test $N_TEST --n-csl $N_CSL --n-en-cal $N_EN_CAL --n-en-test $N_EN_TEST \
+            --n-cl-human $N_CL_HUMAN --n-cl-human-test $N_CL_HUMAN_TEST
       - uses: actions/upload-artifact@v4
         with:
           name: scores-${{ matrix.part }}
@@ -90,6 +139,7 @@ jobs:
           OBSERVER_MODEL: Qwen/Qwen2.5-0.5B
           PERFORMER_MODEL: Qwen/Qwen2.5-0.5B-Instruct
           CLASSIFIER_MODEL: yuchuantian/AIGC_detector_zhv3
+          EN_CLASSIFIER_MODEL: desklib/ai-text-detector-v1.01
         run: |
           mkdir -p tools/scores && cp /tmp/dl/*.json tools/scores/ && ls -la tools/scores
           python tools/evaluate.py --stage fit --scores-dir tools/scores --target-fpr 0.05
@@ -98,5 +148,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add server/app/default_calibration.json server/tools/EVAL_REPORT.md server/tools/eval_result.json server/tools/scores
-          git commit -m "Update default calibration from NLPCC 2025 evaluation" || exit 0
+          git commit -m "Update default calibration (modern Chinese, English, classical Chinese)" || exit 0
           for i in 1 2 3; do git pull --rebase origin main && git push origin HEAD:main && break; sleep 5; done

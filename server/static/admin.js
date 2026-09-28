@@ -84,7 +84,7 @@ $('calBtn').addEventListener('click', async ()=>{
     const ai = splitSamples($('aiText').value).concat(await readFiles($('aiFiles')));
     if(!human.length || !ai.length) throw new Error('两边都需要提供样本。');
     $('calBtn').disabled = true;
-    let job = await call('/admin/api/calibrate', { method:'POST', body: JSON.stringify({ human, ai, target_fpr: parseFloat($('targetFpr').value) }) });
+    let job = await call('/admin/api/calibrate', { method:'POST', body: JSON.stringify({ human, ai, target_fpr: parseFloat($('targetFpr').value), profile: $('calProfile').value }) });
     while(job.status === 'queued' || job.status === 'running'){
       msg(m, job.status === 'queued' ? '排队中…' : `打分中：${job.done} / ${job.total} 段${job.eta_sec ? '，剩余约 ' + Math.ceil(job.eta_sec/60) + ' 分钟' : ''}`, true);
       await sleep(2000);
@@ -95,7 +95,7 @@ $('calBtn').addEventListener('click', async ()=>{
     const au = Object.entries(report.auroc).map(([k,v])=>`${k} ${v}`).join('，');
     msg(m, '校准完成。', true);
     out.innerHTML = `
-      <p class="msg">样本：人写 ${report.n_human} 段、AI ${report.n_ai} 段。区分能力（AUROC，1 = 完美，0.5 = 随机）：${esc(au)}；综合 ${report.combined_auroc}。<br>
+      <p class="msg">文体：<b>${esc(report.profile_name || '现代汉语')}</b>${report.skipped_other_register_segments ? `（另有 ${report.skipped_other_register_segments} 段属于其他文体，未参与）` : ''}。样本：人写 ${report.n_human} 段、AI ${report.n_ai} 段。区分能力（AUROC，1 = 完美，0.5 = 随机）：${esc(au)}；综合 ${report.combined_auroc}。<br>
       参与组合的特征：${esc((report.features_used||[]).join('、') || '三个主信号')}${report.cross_validated ? '（已做 5 折交叉验证）' : ''}。<br>
       阈值 ${report.threshold}：校准样本中人写段落被误判的比例 ${(report.human_flagged_rate*100).toFixed(1)}%，AI 段落被识别出的比例 ${(report.ai_caught_rate*100).toFixed(1)}%。<br>${esc(report.note)}</p>
       <div class="out" id="calJson">${esc(JSON.stringify(calibration))}</div>
@@ -103,13 +103,19 @@ $('calBtn').addEventListener('click', async ()=>{
         <button class="primary-btn" id="applyBtn">立即启用</button>
         <button class="ghost-btn" id="copyCal">复制 JSON</button>
       </div>
-      <p class="msg">要永久保存：在 GitHub 仓库 Settings → Secrets and variables → Actions 的 <b>Variables</b> 里新建 <code>CALIBRATION_JSON</code>，值粘贴上面这段 JSON，然后重新部署。</p>`;
+      <p class="msg">要永久保存：先点“立即启用”（会与其他文体的现有校准合并），再点“复制 JSON”，在 GitHub 仓库 Settings → Secrets and variables → Actions 的 <b>Variables</b> 里新建或修改 <code>CALIBRATION_JSON</code>，粘贴进去，然后重新部署。</p>`;
+    let merged = null;
     $('applyBtn').addEventListener('click', async ()=>{
-      try{ const d = await call('/admin/api/calibration', { method:'POST', body: JSON.stringify({ calibration }) }); msg(m, d.message, true); }
+      try{
+        const d = await call('/admin/api/calibration', { method:'POST', body: JSON.stringify({ calibration }) });
+        merged = d.calibration || null;
+        if(merged) $('calJson').textContent = JSON.stringify(merged);
+        msg(m, d.message, true);
+      }
       catch(e){ msg(m, e.message, false); }
     });
     $('copyCal').addEventListener('click', async ()=>{
-      try{ await navigator.clipboard.writeText(JSON.stringify(calibration)); $('copyCal').textContent = '已复制'; }catch(e){}
+      try{ await navigator.clipboard.writeText(JSON.stringify(merged || calibration)); $('copyCal').textContent = '已复制'; }catch(e){}
     });
   }catch(e){
     msg(m, e.message, false);

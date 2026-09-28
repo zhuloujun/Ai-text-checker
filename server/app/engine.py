@@ -1,4 +1,7 @@
-"""检测引擎：加载模型、逐段打分、汇总成报告；长文档放进后台任务队列。"""
+"""检测引擎：加载模型、逐段打分、汇总成报告；长文档放进后台任务队列。
+
+每段先识别文体（现代汉语 / 文言 / 英文），再用该文体对应的分类器和校准参数打分——
+与知网、维普、Turnitin 等平台"先分语种、再用专门模型判断"的做法一致。"""
 from __future__ import annotations
 
 import logging
@@ -9,12 +12,11 @@ import uuid
 
 from . import config, scoring
 from .detectors import stylometry
-from .detectors.classifier import Classifier
+from .detectors.classifier import Classifier, make_english_classifier
 from .detectors.lm_scorer import LMScorer
-from .segmenter import segment_text
+from .segmenter import REGISTER_NAMES, detect_register, segment_text
 
 log = logging.getLogger("engine")
-
 
 
 def style_scores(text: str, feats: dict | None = None) -> dict:
@@ -28,57 +30,101 @@ class Engine:
     def __init__(self):
         self.lm = LMScorer() if config.ENABLE_LM else None
         self.cls = Classifier() if (config.ENABLE_CLASSIFIER and config.CLASSIFIER_MODEL) else None
+        self.cls_en = (make_english_classifier()
+                       if (config.ENABLE_EN_CLASSIFIER and config.EN_CLASSIFIER_MODEL) else None)
         self.loading = True
+        self.loaded_event = threading.Event()
         self.load_started = time.time()
         self.cal, self.cal_source = self._load_cal()
         self.tokens_per_sec = None
 
     # ---------- 加载 ----------
     def _load_cal(self):
+        default = config.load_default_calibration()
         override, source = config.load_calibration_override()
         if override:
             cal = dict(scoring.DEFAULTS)
             cal.update(override)
+            # 管理员只校准了部分文体时，其余文体沿用内置默认校准
+            profs = dict((default or {}).get("profiles") or {})
+            profs.update(override.get("profiles") or {})
+            if profs:
+                cal["profiles"] = profs
             return cal, source
-        return dict(scoring.DEFAULTS), source
+        if default:
+            cal = dict(scoring.DEFAULTS)
+            cal.update(default)
+            names = "、".join(["现代汉语"] * bool(default.get("calibrated")) +
+                             [scoring.PROFILE_NAMES.get(k, k) for k in (default.get("profiles") or {})])
+            return cal, f"内置默认校准（公开数据集；{names}）"
+        return dict(scoring.DEFAULTS), "内置经验值（未校准）"
 
     def set_calibration(self, cal: dict, source: str):
         self.cal, self.cal_source = cal, source
 
     def load_all(self):
-        for name, det in (("语言模型", self.lm), ("分类器", self.cls)):
-            if det is None:
-                continue
-            try:
-                det.load()
-            except Exception as e:  # noqa: BLE001 —— 单个检测器失败不影响其他
-                log.exception("failed to load %s", name)
-                det.error = f"{type(e).__name__}: {e}"
-        self.loading = False
+        try:
+            for name, det in (("语言模型", self.lm), ("中文分类器", self.cls), ("英文分类器", self.cls_en)):
+                if det is None:
+                    continue
+                try:
+                    det.load()
+                except Exception as e:  # noqa: BLE001 —— 单个检测器失败不影响其他
+                    log.exception("failed to load %s", name)
+                    det.error = f"{type(e).__name__}: {e}"
+        finally:
+            self.loading = False
+            self.loaded_event.set()
+
+    def wait_loaded(self, timeout: float = 900) -> bool:
+        """等所有模型加载完再打分：避免"语言模型好了、分类器还没好"时算出缺项的结果。"""
+        return self.loaded_event.wait(timeout)
 
     def status(self) -> dict:
         def st(det, model):
             if det is None:
                 return {"enabled": False}
             return {"enabled": True, "ready": det.ready, "error": det.error, "model": model}
+        profiles = {"zh": bool(self.cal.get("calibrated"))}
+        for k in ("zh_classical", "en"):
+            profiles[k] = bool(((self.cal.get("profiles") or {}).get(k) or {}).get("calibrated"))
         return {
             "loading": self.loading,
             "lm": st(self.lm, [config.OBSERVER_MODEL, config.PERFORMER_MODEL]),
             "classifier": st(self.cls, config.CLASSIFIER_MODEL),
+            "classifier_en": st(self.cls_en, config.EN_CLASSIFIER_MODEL),
             "calibration": {"calibrated": bool(self.cal.get("calibrated")), "source": self.cal_source,
-                            "threshold": self.cal.get("threshold"), "note": self.cal.get("note")},
+                            "threshold": self.cal.get("threshold"), "note": self.cal.get("note"),
+                            "profiles": profiles},
             "tokens_per_sec": self.tokens_per_sec,
         }
 
     def any_ready(self) -> bool:
-        return bool((self.lm and self.lm.ready) or (self.cls and self.cls.ready))
+        return bool((self.lm and self.lm.ready) or (self.cls and self.cls.ready) or (self.cls_en and self.cls_en.ready))
+
+    def classifier_for(self, register: str):
+        det = self.cls_en if register == "en" else self.cls
+        return det if (det and det.ready) else None
 
     # ---------- 打分 ----------
-    def raw_scores(self, texts: list[str], progress=None) -> list[dict]:
-        """对若干段文字算原始分数（校准时也用这个）。"""
+    def classify(self, texts: list[str], registers: list[str]) -> list:
+        """按文体分组送进对应的分类器；没有可用分类器的返回 None。"""
+        out = [None] * len(texts)
+        for reg in set(registers):
+            det = self.classifier_for(reg)
+            if not det:
+                continue
+            idx = [i for i, r in enumerate(registers) if r == reg]
+            for i, p in zip(idx, det.predict([texts[i] for i in idx])):
+                out[i] = p
+        return out
+
+    def raw_scores(self, texts: list[str], progress=None, registers: list[str] | None = None) -> list[dict]:
+        """对若干段文字算原始分数（校准、评估时也用这个）。"""
+        registers = registers or [detect_register(t) for t in texts]
         out = [style_scores(t) for t in texts]
-        if self.cls and self.cls.ready:
-            for i, p in enumerate(self.cls.predict(texts)):
+        for i, p in enumerate(self.classify(texts, registers)):
+            if p is not None:
                 out[i]["classifier"] = p
         if self.lm and self.lm.ready:
             for i, t in enumerate(texts):
@@ -99,6 +145,7 @@ class Engine:
     def analyze(self, text: str, mode: str = "full", exclude_references: bool = True,
                 flag_quotations: bool = True, progress=None) -> dict:
         t_start = time.time()
+        self.wait_loaded()
         segs = segment_text(text, exclude_references, flag_quotations)
         # 全文都被判为引文/参考文献时，退回为全部计入，否则报告里没有任何数值
         fallback_all = bool(segs) and not any(s.counted for s in segs)
@@ -121,12 +168,12 @@ class Engine:
         lm_ids = {s.index for s in lm_targets}
 
         results = {s.index: {} for s in segs}
-        # 分类器很快：对所有正文段落都算
-        cls_targets = counted + ref_scored
-        if self.cls and self.cls.ready and cls_targets:
-            for s, p in zip(cls_targets, self.cls.predict([s.text for s in cls_targets])):
+        scored = counted + ref_scored
+        # 分类器很快：对所有正文和引文段落都算（按文体选分类器）
+        for s, p in zip(scored, self.classify([s.text for s in scored], [s.register for s in scored])):
+            if p is not None:
                 results[s.index]["classifier"] = p
-        # 语言模型较慢：只算正文（快速模式下抽样）
+        # 语言模型较慢：快速模式下抽样
         if self.lm and self.lm.ready:
             done = 0
             for s in segs:
@@ -145,15 +192,16 @@ class Engine:
                     progress(done, len(lm_ids))
 
         cal = self.cal
-        thr = float(cal.get("threshold", 0.5))
-        scored = counted + ref_scored
         styles = {s.index: stylometry.features(s.text) for s in scored}
         for s in scored:
             results[s.index].update(style_scores(s.text, styles[s.index]))
 
-        # 1) 每段先各自打分（引文段落的分数只作参考值）
+        # 1) 每段按自己的文体用对应的校准参数打分（引文段落的分数只作参考值）
         scored_ids = {s.index for s in scored}
-        combos = {s.index: (scoring.combine(results[s.index], cal) if s.index in scored_ids
+        prof = {}
+        for s in segs:
+            prof[s.index] = scoring.profile_for(cal, s.register)
+        combos = {s.index: (scoring.combine(results[s.index], prof[s.index][0]) if s.index in scored_ids
                             else {"prob": None, "signals": {}})
                   for s in segs}
         # 2) 与相邻正文段落平滑（只在正文段落之间进行）
@@ -164,9 +212,13 @@ class Engine:
         seg_out, counted_chars, prob_weighted = [], 0, 0.0
         chars_by_level = {"high": 0, "mid": 0, "light": 0, "low": 0}
         level_counts = {"high": 0, "mid": 0, "light": 0, "low": 0}
+        chars_by_register: dict[str, int] = {}
+        uncalibrated_regs = set()
         for s in segs:
             sc = results[s.index]
             comb = combos[s.index]
+            pcal, has_cal = prof[s.index]
+            thr = float(pcal.get("threshold", 0.5))
             prob = smoothed.get(s.index) if s.counted else None
             level, label = scoring.level_of(prob, thr) if s.counted else ("none", "")
             if s.counted and prob is not None:
@@ -174,12 +226,16 @@ class Engine:
                 prob_weighted += prob * len(s.text)
                 chars_by_level[level] += len(s.text)
                 level_counts[level] += 1
+                chars_by_register[s.register] = chars_by_register.get(s.register, 0) + len(s.text)
+                if not has_cal:
+                    uncalibrated_regs.add(s.register)
             seg_out.append({
                 "index": s.index, "start": s.start, "chars": len(s.text), "text": s.text,
-                "kind": s.kind, "notes": s.notes,
+                "kind": s.kind, "notes": s.notes, "register": s.register,
+                "register_name": REGISTER_NAMES.get(s.register, s.register),
+                "threshold": thr,
                 "prob": None if prob is None else round(prob, 4),
-                "ref_prob": (None if s.counted or combos[s.index]["prob"] is None
-                             else round(combos[s.index]["prob"], 4)),
+                "ref_prob": (None if s.counted or comb["prob"] is None else round(comb["prob"], 4)),
                 "prob_unsmoothed": None if comb["prob"] is None else round(comb["prob"], 4),
                 "level": level, "label": label,
                 "signals": {k: (None if v is None else round(v, 4)) for k, v in comb["signals"].items()},
@@ -191,25 +247,36 @@ class Engine:
         excluded = [s for s in segs if not s.counted]
         flagged_chars = chars_by_level["high"] + chars_by_level["mid"] + chars_by_level["light"]
         rate = (lambda n: round(n / counted_chars, 4) if counted_chars else None)
+        main_reg = max(chars_by_register, key=chars_by_register.get) if chars_by_register else "zh"
+        main_cal = scoring.profile_for(cal, main_reg)[0]
 
-        # 可信度提示（参考 Turnitin 等平台对短文本、未校准结果的处理）
+        # 可信度提示（参考 Turnitin、GPTZero 等平台对短文本、未校准、非常规文体的处理）
         notes = []
-        if counted_chars < 300:
-            notes.append("参与计算的正文不足 300 字，结果波动较大，仅供参考。")
-        if not cal.get("calibrated"):
-            notes.append("尚未用你的样本校准，阈值为经验值，AI 率只宜作相对参考。")
-        elif str(cal.get("source", "")).startswith("NLPCC"):
+        en_chars = chars_by_register.get("en", 0)
+        if counted_chars < 300 or (main_reg == "en" and en_chars < 1500):
+            notes.append("参与计算的正文较短（中文不足 300 字 / 英文不足约 300 词），结果波动较大，仅供参考。")
+        if len(chars_by_register) > 1:
+            notes.append("文中含多种文体（" + "、".join(f"{REGISTER_NAMES.get(k, k)} {v} 字"
+                                                     for k, v in chars_by_register.items()) + "），各自用对应的模型和阈值判断。")
+        for reg in sorted(uncalibrated_regs):
+            notes.append(f"{REGISTER_NAMES.get(reg, reg)}部分尚无专门校准，结果只宜作相对参考。")
+        if chars_by_register.get("zh_classical"):
+            notes.append("文言检测难度远高于白话：名篇原文常被模型\"背过\"而显得像 AI，AI 仿写的文言又较少见，"
+                         "请把文言部分的结果当作线索而非结论。")
+        if main_reg == "zh" and str(cal.get("source", "")).startswith("NLPCC") and cal.get("calibrated"):
             notes.append("使用的是内置默认校准（公开数据集：学术摘要、新闻、作文）；用你自己的文字在管理页校准后会更贴合你的文风。")
         if sampled:
             notes.append(f"快速模式：语言模型只检测了 {len(lm_ids)} 段，其余段落仅用分类器。")
         if fallback_all:
-            notes.append("全文都被识别为引文（引号对话多或文言虚词多）或参考文献，已改为全部计入计算。"
-                         "注意：检测模型主要用现代汉语训练，对文言、古籍体文字的判断不可靠。")
+            notes.append("全文都被识别为引文（引号对话多或文言虚词多）或参考文献，已改为全部计入计算。")
         elif excluded and sum(len(x.text) for x in excluded) > 0.3 * max(1, len(text)):
             notes.append("超过 30% 的文字因参考文献或引文被排除，AI 率只反映其余正文；"
                          "被排除的引文段落仍给出“参考值”。如需计入，请取消勾选“引文为主的段落不计入”。")
         if not (self.lm and self.lm.ready):
             notes.append("语言模型未就绪，本次只使用了分类器。")
+        missing_cls = {REGISTER_NAMES.get(r, r) for r in chars_by_register if not self.classifier_for(r)}
+        if missing_cls:
+            notes.append("、".join(sorted(missing_cls)) + "分类器未就绪，这部分只用了语言模型特征。")
 
         return {
             "summary": {
@@ -218,11 +285,13 @@ class Engine:
                 "mid_rate": rate(chars_by_level["mid"]),
                 "light_rate": rate(chars_by_level["light"]),
                 "mean_prob": round(prob_weighted / counted_chars, 4) if counted_chars else None,
-                "threshold": thr,
+                "threshold": float(main_cal.get("threshold", 0.5)),
                 "total_chars": len(text),
                 "counted_chars": counted_chars,
                 "flagged_chars": flagged_chars,
                 "chars_by_level": chars_by_level,
+                "chars_by_register": chars_by_register,
+                "main_register": main_reg,
                 "excluded_chars": sum(len(s.text) for s in excluded),
                 "fallback_all_counted": fallback_all,
                 "excluded_reference_segments": sum(1 for s in excluded if s.kind == "reference"),
@@ -233,14 +302,15 @@ class Engine:
                 "mode": mode,
                 "lm_sampled": sampled,
                 "lm_scored_segments": len(lm_ids) if (self.lm and self.lm.ready) else 0,
-                "calibrated": bool(cal.get("calibrated")),
-                "calibration_note": cal.get("note"),
-                "calibration_features": (cal.get("lr") or {}).get("features"),
+                "calibrated": bool(main_cal.get("calibrated")),
+                "calibration_note": main_cal.get("note"),
+                "calibration_features": (main_cal.get("lr") or {}).get("features"),
                 "reliability_notes": notes,
                 "methods": {
                     "fastdetect": bool(self.lm and self.lm.ready),
                     "binoculars": bool(self.lm and self.lm.ready),
                     "classifier": bool(self.cls and self.cls.ready),
+                    "classifier_en": bool(self.cls_en and self.cls_en.ready),
                 },
                 "elapsed_sec": round(time.time() - t_start, 1),
             },
@@ -342,14 +412,28 @@ class JobQueue:
 
 
 def run_calibration(engine: Engine, p: dict, progress=None) -> dict:
+    """用管理员提供的样本校准某一文体。profile=auto 时按样本中字数最多的文体确定。"""
+    engine.wait_loaded()
+
     def to_segments(texts):
         out = []
         for t in texts:
-            out.extend(s.text for s in segment_text(t, True, True) if s.counted and len(s.text) >= config.SEGMENT_MIN_CHARS)
+            for s in segment_text(t, True, False):
+                if s.counted and len(s.text) >= config.SEGMENT_MIN_CHARS:
+                    out.append(s)
         return out
 
     human = to_segments(p.get("human", []))
     ai = to_segments(p.get("ai", []))
+    profile = p.get("profile") or "auto"
+    if profile == "auto":
+        by: dict[str, int] = {}
+        for s in human + ai:
+            by[s.register] = by.get(s.register, 0) + len(s.text)
+        profile = max(by, key=by.get) if by else "zh"
+    skipped = sum(1 for s in human + ai if s.register != profile)
+    human = [s.text for s in human if s.register == profile]
+    ai = [s.text for s in ai if s.register == profile]
     total = len(human) + len(ai)
     done = [0]
 
@@ -358,9 +442,14 @@ def run_calibration(engine: Engine, p: dict, progress=None) -> dict:
         if progress:
             progress(done[0], total)
 
-    hs = engine.raw_scores(human, prog)
-    as_ = engine.raw_scores(ai, prog)
+    hs = engine.raw_scores(human, prog, [profile] * len(human))
+    as_ = engine.raw_scores(ai, prog, [profile] * len(ai))
     res = scoring.calibrate(hs, as_, float(p.get("target_fpr", 0.05)))
     res["calibration"]["models"] = {"observer": config.OBSERVER_MODEL, "performer": config.PERFORMER_MODEL,
-                                    "classifier": config.CLASSIFIER_MODEL}
+                                    "classifier": config.classifier_for(profile)}
+    res["calibration"]["profile"] = profile
+    res["calibration"]["note"] = (f"{REGISTER_NAMES.get(profile, profile)}：" + res["calibration"].get("note", ""))
+    res["report"]["profile"] = profile
+    res["report"]["profile_name"] = REGISTER_NAMES.get(profile, profile)
+    res["report"]["skipped_other_register_segments"] = skipped
     return res

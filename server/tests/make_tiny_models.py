@@ -20,3 +20,23 @@ torch.manual_seed(3)
 bc = BertConfig(vocab_size=V, hidden_size=64, intermediate_size=128, num_hidden_layers=2, num_attention_heads=4, max_position_embeddings=512, id2label={0:"LABEL_0",1:"LABEL_1"}, label2id={"LABEL_0":0,"LABEL_1":1})
 BertForSequenceClassification(bc).save_pretrained(OUT + "/cls"); fast.save_pretrained(OUT + "/cls")
 print("vocab", V)
+
+# 英文分类器（与 desklib 相同结构：DeBERTa-v2 + 平均池化 + 线性层），目录名含 desklib 以走同一加载路径
+import torch.nn as nn
+from transformers import AutoConfig, AutoModel, DebertaV2Config, PreTrainedModel
+
+
+class DesklibAIDetectionModel(PreTrainedModel):
+    config_class = AutoConfig
+
+    def __init__(self, cfg):
+        super().__init__(cfg)
+        self.model = AutoModel.from_config(cfg)
+        self.classifier = nn.Linear(cfg.hidden_size, 1)
+        self.post_init()
+
+
+torch.manual_seed(4)
+dc = DebertaV2Config(vocab_size=V, hidden_size=64, intermediate_size=128, num_hidden_layers=2, num_attention_heads=4,
+                     max_position_embeddings=512)
+DesklibAIDetectionModel(dc).save_pretrained(OUT + "/desklib_en"); fast.save_pretrained(OUT + "/desklib_en")

@@ -13,6 +13,7 @@ if not MD:
 
 os.environ.update({
     "OBSERVER_MODEL": f"{MD}/observer", "PERFORMER_MODEL": f"{MD}/performer", "CLASSIFIER_MODEL": f"{MD}/cls",
+    "EN_CLASSIFIER_MODEL": f"{MD}/desklib_en",
     "ADMIN_TOKEN": "test-admin-pw", "LM_MAX_TOKENS": "128", "CALIBRATION_FILE": "/nonexistent/cal.json",
     "MAX_TEXT_CHARS": "300000",
 })
@@ -22,12 +23,16 @@ import torch  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app import keys, scoring  # noqa: E402
-from app.segmenter import classical_ratio, segment_text  # noqa: E402
+from app.segmenter import classical_ratio, detect_register, segment_text  # noqa: E402
 
 MODERN = ("宋代的地方行政制度在很大程度上延续了唐末五代的格局，但又有所调整。据《宋史·职官志》记载，路一级机构的设置经历了反复变化，"
           "转运使司的职能也随之扩展。这一时期的文献对州县官员的任免多有记述，然而其中不乏相互矛盾之处。笔者以为，此类记载须与地方志、碑刻互相参证，方能厘清其真实面貌。")
 CLASSICAL = ("太祖既受禅，患藩镇之强，乃用赵普之谋，稍夺其权。或曰：其所以然者，盖鉴于唐末五代之乱也。帝曰：善。于是诸镇皆罢，"
              "以文臣知州事，而兵权悉归于上。君子曰：此所谓强干弱枝者也，其虑深矣，岂不然哉。")
+ENGLISH = ("The administrative system of the Song dynasty largely continued the structure inherited from the late Tang and "
+           "the Five Dynasties, although it was adjusted in several important ways. According to the treatise on offices in "
+           "the Song History, the organization of circuit-level agencies changed repeatedly, and the functions of the fiscal "
+           "commissioners expanded accordingly. Sources from this period record many appointments of prefectural officials. ")
 
 
 # ---------------- 公式：与官方实现逐字比对 ----------------
@@ -122,7 +127,44 @@ def test_long_text_is_chunked(scorer):
 # ---------------- 分段 ----------------
 
 def test_classical_ratio_separates():
-    assert classical_ratio(MODERN) < 0.07 <= classical_ratio(CLASSICAL)
+    assert classical_ratio(CLASSICAL) >= 0.03  # 学术白话也常用"其、而、以"，所以还要看现代汉语标志词
+    assert detect_register(MODERN) == "zh"
+    assert detect_register(CLASSICAL) == "zh_classical"
+    assert detect_register(ENGLISH) == "en"
+
+
+def test_classical_document_is_counted_and_modern_quotes_excluded():
+    # 通篇文言（文言小说、仿古文）：文言就是正文，对话多也不算引文
+    story = "\n\n".join([CLASSICAL, "女曰：“妾本唐时花媪，以杜工部一诗，得窃灵气，岁久成精。郎宜自爱，勿以妾为念也。”生泣而别之。", CLASSICAL])
+    segs = segment_text(story)
+    assert all(s.kind == "body" and s.register == "zh_classical" for s in segs)
+    # 现代汉语论文里夹一段文言：文言段落视为古籍引文，另起一段
+    paper = "\n\n".join([MODERN, CLASSICAL, MODERN])
+    kinds = [(s.register, s.kind) for s in segment_text(paper)]
+    assert ("zh_classical", "quotation") in kinds and kinds.count(("zh", "body")) == 2
+
+
+def test_english_segments_are_longer_and_split_on_sentences():
+    segs = segment_text(ENGLISH * 8)
+    assert all(s.register == "en" for s in segs)
+    assert all(len(s.text) >= 500 for s in segs)
+    assert all(s.text.rstrip().endswith(".") for s in segs)
+
+
+def test_profiles_and_merge():
+    base = {"calibrated": True, "threshold": 0.5, "signals": scoring.DEFAULTS["signals"], "note": "zh"}
+    en = dict(base, note="en", threshold=0.7, profile="en")
+    merged = scoring.merge_profile(base, en, "en")
+    assert merged["note"] == "zh" and merged["profiles"]["en"]["threshold"] == 0.7
+    assert scoring.profile_for(merged, "en")[0]["threshold"] == 0.7
+    assert scoring.profile_for(merged, "zh")[0]["note"] == "zh"
+    # 文言没有专门校准：沿用现代汉语参数，但标记为未校准
+    assert scoring.profile_for(merged, "zh_classical") == (merged, False)
+    # 英文没有专门校准：退回经验值，不用中文参数
+    assert scoring.profile_for(base, "en")[1] is False
+    # 替换现代汉语部分时保留其他文体
+    again = scoring.merge_profile(merged, dict(base, note="zh2"), "zh")
+    assert again["note"] == "zh2" and again["profiles"]["en"]["threshold"] == 0.7
 
 
 def test_segmenter_excludes_references_and_quotes():
@@ -235,7 +277,7 @@ def poll(client, jid, headers, path="/v1/jobs/"):
 
 def test_health(client):
     h = client.get("/health").json()
-    assert h["lm"]["ready"] and h["classifier"]["ready"], h
+    assert h["lm"]["ready"] and h["classifier"]["ready"] and h["classifier_en"]["ready"], h
     assert h["requires_key"] and h["key_signing_configured"]
     assert h["calibration"]["calibrated"] is False
 
@@ -259,7 +301,7 @@ def test_detect_sync(client):
     j = r.json()
     assert j["status"] == "done"
     s = j["result"]["summary"]
-    assert s["methods"] == {"fastdetect": True, "binoculars": True, "classifier": True}
+    assert s["methods"] == {"fastdetect": True, "binoculars": True, "classifier": True, "classifier_en": True}
     assert 0 <= s["ai_rate"] <= 1 and s["counted_chars"] > 0
     seg = j["result"]["segments"][0]
     assert set(seg["raw"]) >= {"fastdetect", "binoculars", "classifier", "ppl", "lrr", "log_rank", "entropy", "top10", "style_cv"}
@@ -270,10 +312,16 @@ def test_detect_sync(client):
 
 def test_all_quotation_falls_back_and_excluded_get_reference_value(client):
     h = {"Authorization": "Bearer " + issue(client)}
-    # 全文都是文言：应退回为全部计入，报告有数值
+    # 通篇文言：文言就是正文，照常计入（不再被当作引文排除）
     s = client.post("/v1/detect", json={"text": CLASSICAL * 3}, headers=h).json()["result"]
-    assert s["summary"]["fallback_all_counted"] is True
+    assert s["summary"]["fallback_all_counted"] is False
     assert s["summary"]["counted_chars"] > 0 and s["summary"]["ai_rate"] is not None
+    assert s["summary"]["main_register"] == "zh_classical"
+    assert any("文言" in n for n in s["summary"]["reliability_notes"])
+    # 只有参考文献：退回为全部计入，报告仍有数值
+    refs = "参考文献\n" + "\n".join(f"[{i}] 脱脱等：《宋史》卷{i}，北京：中华书局，1977年，第{i*3}页。" for i in range(1, 12))
+    s = client.post("/v1/detect", json={"text": refs}, headers=h).json()["result"]
+    assert s["summary"]["fallback_all_counted"] is True
     assert all(seg["prob"] is not None for seg in s["segments"])
     # 正文 + 文言引文：引文不计入，但有参考值
     r = client.post("/v1/detect", json={"text": MODERN * 2 + "\n\n" + CLASSICAL * 2}, headers=h).json()["result"]
@@ -345,3 +393,34 @@ def test_calibrate_endpoint_and_apply(client):
     assert cal["calibrated"]
     assert client.post("/admin/api/calibration", json={"calibration": cal}, headers=ADMIN).json()["ok"]
     assert client.get("/health").json()["calibration"]["calibrated"] is True
+
+
+def test_english_uses_english_classifier(client):
+    from app import main
+    h = {"Authorization": "Bearer " + issue(client)}
+    r = client.post("/v1/detect", json={"text": ENGLISH * 6 + "\n\n" + MODERN * 3, "wait": True}, headers=h).json()["result"]
+    regs = {seg["register"] for seg in r["segments"]}
+    assert regs == {"en", "zh"}, regs
+    en_seg = next(seg for seg in r["segments"] if seg["register"] == "en")
+    zh_seg = next(seg for seg in r["segments"] if seg["register"] == "zh")
+    # 英文段落的分类器分数来自英文分类器，与中文分类器给同一段的分数不同
+    assert en_seg["raw"]["classifier"] == round(main.engine.cls_en.predict([en_seg["text"]])[0], 4)
+    assert zh_seg["raw"]["classifier"] == round(main.engine.cls.predict([zh_seg["text"]])[0], 4)
+    assert set(r["summary"]["chars_by_register"]) == {"en", "zh"}
+    assert any("多种文体" in n for n in r["summary"]["reliability_notes"])
+
+
+def test_calibrate_one_profile_keeps_others(client):
+    human = [ENGLISH * 4] * 6
+    ai = [("Furthermore, it is worth noting that the administrative landscape of the Song dynasty serves as a testament "
+           "to the intricate interplay of central authority and local governance. Moreover, this multifaceted system "
+           "played a pivotal role in fostering stability. ") * 6] * 6
+    r = client.post("/admin/api/calibrate", json={"human": human, "ai": ai, "profile": "auto"}, headers=ADMIN)
+    j = poll(client, r.json()["id"], ADMIN, "/admin/api/jobs/")
+    assert j["status"] == "done", j
+    cal = j["result"]["calibration"]
+    assert cal["profile"] == "en" and j["result"]["report"]["profile_name"] == "英文"
+    d = client.post("/admin/api/calibration", json={"calibration": cal}, headers=ADMIN).json()
+    assert d["calibration"]["profiles"]["en"]["calibrated"]
+    h = client.get("/health").json()["calibration"]["profiles"]
+    assert h["en"] is True

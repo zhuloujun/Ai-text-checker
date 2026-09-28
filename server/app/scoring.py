@@ -105,20 +105,24 @@ def _auroc(pos: list[float], neg: list[float]) -> float | None:
 
 
 def _fit_logreg(X: list[list[float]], y: list[int], l2: float = 1.0, iters: int = 200):
-    """小规模逻辑回归（牛顿法 + L2），不依赖 sklearn。"""
+    """小规模逻辑回归（牛顿法 + L2），不依赖 sklearn。两类样本数不同时按类别加权（各占一半权重），
+    避免样本多的一类把概率整体拉偏。"""
     import numpy as np
 
     Xa = np.asarray(X, dtype=float)
     ya = np.asarray(y, dtype=float)
     n, d = Xa.shape
+    n1 = max(ya.sum(), 1.0)
+    n0 = max(n - ya.sum(), 1.0)
+    sw = np.where(ya == 1, n / (2 * n1), n / (2 * n0))
     Xb = np.hstack([Xa, np.ones((n, 1))])
     w = np.zeros(d + 1)
     reg = np.eye(d + 1) * l2
     reg[-1, -1] = 0.0
     for _ in range(iters):
         p = 1 / (1 + np.exp(-Xb @ w))
-        g = Xb.T @ (p - ya) + reg @ w
-        H = (Xb * (p * (1 - p))[:, None]).T @ Xb + reg
+        g = Xb.T @ (sw * (p - ya)) + reg @ w
+        H = (Xb * (sw * p * (1 - p))[:, None]).T @ Xb + reg
         step = np.linalg.solve(H + np.eye(d + 1) * 1e-9, g)
         w -= step
         if np.abs(step).max() < 1e-8:
@@ -224,6 +228,42 @@ def calibrate(human: list[dict], ai: list[dict], target_fpr: float = 0.05) -> di
     cal["calibrated"] = True
     cal["note"] = f"已用 {len(human)} 段人写文本、{len(ai)} 段 AI 文本校准。"
     return {"calibration": cal, "report": report}
+
+
+# ---------------- 按文体分别校准 ----------------
+# 校准 JSON 的顶层是"现代汉语"参数；profiles 里放其他文体（en 英文、zh_classical 文言）各自的参数。
+# 各文体的文字特征差别很大（英文用英文分类器；文言的困惑度分布与白话完全不同），不能共用一套阈值。
+
+PROFILE_NAMES = {"zh": "现代汉语", "zh_classical": "文言", "en": "英文"}
+
+
+def profile_for(cal: dict, register: str):
+    """返回 (该文体使用的校准参数, 是否有专门校准)。"""
+    if register in (None, "", "zh"):
+        return cal, bool(cal.get("calibrated"))
+    prof = (cal.get("profiles") or {}).get(register)
+    if prof:
+        merged = dict(DEFAULTS)
+        merged.update(prof)
+        return merged, bool(prof.get("calibrated"))
+    if register == "en":
+        # 英文没有专门校准时，现代汉语的参数没有意义（分类器都不一样），退回经验值
+        return dict(DEFAULTS), False
+    return cal, False
+
+
+def merge_profile(base: dict, new: dict, profile: str) -> dict:
+    """把某一文体的新校准并入整套校准，其他文体保持不变。"""
+    base = dict(base or DEFAULTS)
+    profiles = dict(base.get("profiles") or {})
+    if profile in (None, "", "zh"):
+        out = {k: v for k, v in new.items() if k not in ("profile", "profiles")}
+        if profiles:
+            out["profiles"] = profiles
+        return out
+    profiles[profile] = {k: v for k, v in new.items() if k != "profiles"}
+    base["profiles"] = profiles
+    return base
 
 
 # ---------------- 相邻段落平滑与分级 ----------------
