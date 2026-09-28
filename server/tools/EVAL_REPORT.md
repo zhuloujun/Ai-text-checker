@@ -47,9 +47,9 @@
 
 ## 诗词
 - 数据：ChangAn 当代旧体诗词（人写）+ DeepSeek / 豆包 / GPT-4.1 生成诗词；诗词专用分类器（ChangAn 训练集微调）
-- 校准集 400 人写 / 399 AI；阈值 0.765；交叉验证 AUROC 0.8886；特征 fastdetect, binoculars, logit_classifier, fastdetect_norm, lrr, log_rank, entropy, top10, style_cv, style_phrases
-- 特征组合比较（校准集交叉验证 AUROC）：全部特征 0.8886，三个主信号 0.8559，语言模型特征 0.8571 → 选用全部特征
-- **ChangAn 保留集（另一批作者 + 没见过的 Kimi-K2 与其他模型的新诗词）**（300 AI / 300 人写）：AUROC 0.8637；检出率 48.3%；误判率 4.0%
-  - 各来源检出率：Deepseek 56%，gpt-4.1 54%，seed 48%，kimi-k2 44%
-  - 各来源误判率：human 4%
-  - 各特征 AUROC：fastdetect 0.7773，binoculars 0.2396，logit_classifier 0.7177，fastdetect_norm 0.7645，lrr 0.7725，log_rank 0.2068，entropy 0.3132，top10 0.7221，lp_burstiness 0.6399，style_cv 0.4159，style_phrases 0.5
+- 校准集 400 人写 / 399 AI；阈值 0.8225；交叉验证 AUROC 0.9755；特征 fastdetect, binoculars, logit_classifier, fastdetect_norm, lrr, log_rank, entropy, top10, style_cv, style_phrases
+- 特征组合比较（校准集交叉验证 AUROC）：全部特征 0.9755，三个主信号 0.9737，语言模型特征 0.8738 → 选用全部特征
+- **ChangAn 保留集（另一批作者 + 没见过的 Kimi-K2 与其他模型的新诗词）**（300 AI / 300 人写）：AUROC 0.9545；检出率 73.7%；误判率 2.3%
+  - 各来源检出率：Deepseek 61%，gpt-4.1 88%，kimi-k2 71%，seed 75%
+  - 各来源误判率：human 2%
+  - 各特征 AUROC：fastdetect 0.7595，binoculars 0.2502，logit_classifier 0.9532，fastdetect_norm 0.7519，lrr 0.8175，log_rank 0.1699，entropy 0.2499，top10 0.7724，lp_burstiness 0.5953，style_cv 0.4707，style_phrases 0.5

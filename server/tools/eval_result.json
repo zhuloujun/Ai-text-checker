@@ -374,16 +374,16 @@
    "n_human": 400,
    "n_ai": 399,
    "auroc": {
-    "fastdetect": 0.7865,
-    "binoculars": 0.7759,
-    "classifier": 0.7765,
-    "fastdetect_norm": 0.7812,
-    "lrr": 0.8298,
-    "log_rank": 0.8389,
-    "entropy": 0.7182,
-    "top10": 0.7934,
-    "lp_burstiness": 0.6188,
-    "style_cv": 0.5709,
+    "fastdetect": 0.8229,
+    "binoculars": 0.807,
+    "classifier": 0.9758,
+    "fastdetect_norm": 0.8095,
+    "lrr": 0.8431,
+    "log_rank": 0.8516,
+    "entropy": 0.7341,
+    "top10": 0.8071,
+    "lp_burstiness": 0.5972,
+    "style_cv": 0.6265,
     "style_phrases": 0.5
    },
    "features_used": [
@@ -399,15 +399,15 @@
     "style_phrases"
    ],
    "cross_validated": true,
-   "combined_auroc": 0.8886,
-   "threshold": 0.765,
-   "human_flagged_rate": 0.0325,
-   "ai_caught_rate": 0.5764,
+   "combined_auroc": 0.9755,
+   "threshold": 0.8225,
+   "human_flagged_rate": 0.03,
+   "ai_caught_rate": 0.8346,
    "note": "以上指标用 5 折交叉验证（每次用没参与拟合的样本）算出；样本越多、越接近你要检测的文本，越可信。",
    "feature_selection": {
-    "全部特征": 0.8886,
-    "三个主信号": 0.8559,
-    "语言模型特征": 0.8571
+    "全部特征": 0.9755,
+    "三个主信号": 0.9737,
+    "语言模型特征": 0.8738
    },
    "feature_set": "全部特征"
   },
@@ -416,30 +416,30 @@
     "name": "ChangAn 保留集（另一批作者 + 没见过的 Kimi-K2 与其他模型的新诗词）",
     "n_human": 300,
     "n_ai": 300,
-    "auroc": 0.8637,
-    "ai_caught": 0.4833,
-    "human_flagged": 0.04,
+    "auroc": 0.9545,
+    "ai_caught": 0.7367,
+    "human_flagged": 0.0233,
     "per_signal_auroc": {
-     "fastdetect": 0.7773,
-     "binoculars": 0.2396,
-     "logit_classifier": 0.7177,
-     "fastdetect_norm": 0.7645,
-     "lrr": 0.7725,
-     "log_rank": 0.2068,
-     "entropy": 0.3132,
-     "top10": 0.7221,
-     "lp_burstiness": 0.6399,
-     "style_cv": 0.4159,
+     "fastdetect": 0.7595,
+     "binoculars": 0.2502,
+     "logit_classifier": 0.9532,
+     "fastdetect_norm": 0.7519,
+     "lrr": 0.8175,
+     "log_rank": 0.1699,
+     "entropy": 0.2499,
+     "top10": 0.7724,
+     "lp_burstiness": 0.5953,
+     "style_cv": 0.4707,
      "style_phrases": 0.5
     },
     "ai_caught_by_model": {
-     "Deepseek": 0.56,
-     "gpt-4.1": 0.54,
-     "seed": 0.48,
-     "kimi-k2": 0.44
+     "Deepseek": 0.6133,
+     "gpt-4.1": 0.88,
+     "kimi-k2": 0.7067,
+     "seed": 0.7467
     },
     "human_flagged_by_source": {
-     "human": 0.04
+     "human": 0.0233
     }
    }
   ],
