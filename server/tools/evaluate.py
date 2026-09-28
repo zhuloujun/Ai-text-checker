@@ -135,21 +135,37 @@ def zh_parts(args):
 
 def read_mage(path):
     csv.field_size_limit(10 ** 8)
-    rows = []
-    with open(path, encoding="utf-8", newline="") as f:
-        for r in csv.DictReader(f):
-            text = (r.get("text") or "").strip()
-            src = r.get("src") or ""
-            try:
-                human = int(r.get("label")) == 1        # MAGE：1 = 人写，0 = 机器生成
-            except (TypeError, ValueError):
+    rows, header, n_raw = [], None, 0
+    with open(path, encoding="utf-8-sig", newline="") as f:
+        reader = csv.reader(f)
+        header = [h.strip().lower() for h in next(reader)]
+        col = lambda *names: next((header.index(n) for n in names if n in header), None)
+        ti, li, si = col("text", "texts"), col("label", "labels"), col("src", "source")
+        if ti is None:
+            ti = 0
+        for r in reader:
+            n_raw += 1
+            if len(r) <= ti:
                 continue
+            text = (r[ti] or "").strip()
+            src = r[si] if si is not None and si < len(r) else ""
+            human = None
+            if li is not None and li < len(r):
+                try:
+                    human = int(float(r[li])) == 1          # MAGE：1 = 人写，0 = 机器生成
+                except ValueError:
+                    pass
             if "human" in src:
                 human = True
             elif "machine" in src:
                 human = False
+            if human is None:
+                continue
             if len(text) >= 400:
-                rows.append({"text": text, "y": 0 if human else 1, "model": src, "domain": src.split("_")[0]})
+                rows.append({"text": text, "y": 0 if human else 1, "model": src or "mage",
+                             "domain": (src.split("_")[0] if src else "mage")})
+    print(f"::notice title=读取 {Path(path).name}::表头 {header}，共 {n_raw} 行，可用 {len(rows)} 行"
+          f"（人写 {sum(r['y'] == 0 for r in rows)} / AI {sum(r['y'] == 1 for r in rows)}）", flush=True)
     return rows
 
 
@@ -247,6 +263,8 @@ def stage_score(args):
         if time.time() - last[0] > 60:
             last[0] = time.time()
             print(f"  {d}/{n}  {time.time()-t:.0f}s", flush=True)
+    if not segs:
+        raise SystemExit(f"[{args.part}] 没有可打分的样本（原始 {len(rows)} 条），请检查数据下载与读取")
     sc = engine.raw_scores(segs, prog, [prof] * len(segs))
     out = [{"y": l, "model": m, "chars": len(x_text), "s": {k: v for k, v in x.items() if isinstance(v, (int, float))}}
            for x, l, m, x_text in zip(sc, labels, meta, segs)]
