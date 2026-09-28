@@ -96,6 +96,122 @@
    "classifier": "yuchuantian/AIGC_detector_zhv3"
   }
  },
+ "en": {
+  "calibration_report": {
+   "n_human": 296,
+   "n_ai": 300,
+   "auroc": {
+    "fastdetect": 0.7473,
+    "binoculars": 0.7422,
+    "classifier": 0.9618,
+    "fastdetect_norm": 0.738,
+    "lrr": 0.8207,
+    "log_rank": 0.8074,
+    "entropy": 0.7706,
+    "top10": 0.7994,
+    "lp_burstiness": 0.725,
+    "style_cv": 0.5682,
+    "style_phrases": 0.5304
+   },
+   "features_used": [
+    "fastdetect",
+    "binoculars",
+    "logit_classifier",
+    "fastdetect_norm",
+    "lrr",
+    "log_rank",
+    "entropy",
+    "top10",
+    "lp_burstiness",
+    "style_cv",
+    "style_phrases"
+   ],
+   "cross_validated": true,
+   "combined_auroc": 0.9722,
+   "threshold": 0.601,
+   "human_flagged_rate": 0.0507,
+   "ai_caught_rate": 0.8667,
+   "note": "以上指标用 5 折交叉验证（每次用没参与拟合的样本）算出；样本越多、越接近你要检测的文本，越可信。"
+  },
+  "evaluation": [
+   {
+    "name": "MAGE：GPT-4 在未见过的领域生成的文本",
+    "n_human": 150,
+    "n_ai": 150,
+    "auroc": 0.9794,
+    "ai_caught": 0.94,
+    "human_flagged": 0.0667,
+    "per_signal_auroc": {
+     "fastdetect": 0.8273,
+     "binoculars": 0.1768,
+     "logit_classifier": 0.9828,
+     "fastdetect_norm": 0.8235,
+     "lrr": 0.7548,
+     "log_rank": 0.1979,
+     "entropy": 0.2756,
+     "top10": 0.7896,
+     "lp_burstiness": 0.7117,
+     "style_cv": 0.3014,
+     "style_phrases": 0.6956
+    },
+    "ai_caught_by_model": {
+     "cnn_gpt4": 0.8857,
+     "imdb_gpt4": 0.9149,
+     "pubmed_gpt4": 0.9722,
+     "dialogsum_gpt4": 1.0
+    },
+    "human_flagged_by_source": {
+     "pubmed_human": 0.0204,
+     "dialogsum_human": 0.2059,
+     "imdb_human": 0.0,
+     "cnn_human": 0.05
+    }
+   },
+   {
+    "name": "MAGE：GPT-4 文本经改写后（含本仓库英文 AI 样本）",
+    "n_human": 150,
+    "n_ai": 173,
+    "auroc": 0.8634,
+    "ai_caught": 0.6763,
+    "human_flagged": 0.1333,
+    "per_signal_auroc": {
+     "fastdetect": 0.5799,
+     "binoculars": 0.4234,
+     "logit_classifier": 0.8832,
+     "fastdetect_norm": 0.5805,
+     "lrr": 0.6236,
+     "log_rank": 0.3531,
+     "entropy": 0.3639,
+     "top10": 0.6535,
+     "lp_burstiness": 0.5053,
+     "style_cv": 0.3114,
+     "style_phrases": 0.5934
+    },
+    "ai_caught_by_model": {
+     "pubmed_gpt4_para": 0.8163,
+     "cnn_gpt4_para": 0.4651,
+     "imdb_gpt4_para": 0.7097,
+     "dialogsum_gpt4_para": 0.8148,
+     "repo-ai-english": 0.5652
+    },
+    "human_flagged_by_source": {
+     "pubmed_human": 0.1579,
+     "imdb_human": 0.0,
+     "pubmed_human_para": 0.0,
+     "cnn_human": 0.1176,
+     "dialogsum_human_para": 0.3043,
+     "cnn_human_para": 0.1905,
+     "imdb_human_para": 0.1765,
+     "dialogsum_human": 0.0769
+    }
+   }
+  ],
+  "models": {
+   "observer": "Qwen/Qwen2.5-0.5B",
+   "performer": "Qwen/Qwen2.5-0.5B-Instruct",
+   "classifier": "desklib/ai-text-detector-v1.01"
+  }
+ },
  "zh_classical": {
   "calibration_report": {
    "n_human": 236,
