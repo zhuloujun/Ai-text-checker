@@ -6,34 +6,50 @@
    "auroc": {
     "fastdetect": 0.929,
     "binoculars": 0.9366,
-    "classifier": 0.9989
+    "classifier": 0.9989,
+    "fastdetect_norm": 0.9414,
+    "lrr": 0.8418,
+    "log_rank": 0.8203,
+    "entropy": 0.7063,
+    "top10": 0.826,
+    "lp_burstiness": 0.6239,
+    "style_cv": 0.8538,
+    "style_phrases": 0.745
    },
    "features_used": [
     "fastdetect",
     "binoculars",
-    "logit_classifier"
+    "logit_classifier",
+    "fastdetect_norm",
+    "lrr",
+    "log_rank",
+    "entropy",
+    "top10",
+    "lp_burstiness",
+    "style_cv",
+    "style_phrases"
    ],
    "cross_validated": true,
-   "combined_auroc": 0.9994,
+   "combined_auroc": 0.9993,
    "threshold": 0.5,
-   "human_flagged_rate": 0.0255,
-   "ai_caught_rate": 0.9924,
+   "human_flagged_rate": 0.023,
+   "ai_caught_rate": 0.9848,
    "note": "以上指标用 5 折交叉验证（每次用没参与拟合的样本）算出；样本越多、越接近你要检测的文本，越可信。",
    "feature_selection": {
     "全部特征": 0.9993,
     "三个主信号": 0.9994,
     "语言模型特征": 0.9699
    },
-   "feature_set": "三个主信号"
+   "feature_set": "全部特征"
   },
   "evaluation": [
    {
     "name": "NLPCC 测试集（训练时未见，含 DeepSeek-V3）",
     "n_human": 183,
     "n_ai": 197,
-    "auroc": 0.9759,
-    "ai_caught": 0.9289,
-    "human_flagged": 0.0601,
+    "auroc": 0.975,
+    "ai_caught": 0.9086,
+    "human_flagged": 0.0328,
     "per_signal_auroc": {
      "fastdetect": 0.8535,
      "binoculars": 0.1447,
@@ -56,7 +72,7 @@
     "n_ai": 180,
     "auroc": 1.0,
     "ai_caught": 1.0,
-    "human_flagged": 0.0167,
+    "human_flagged": 0.0,
     "per_signal_auroc": {
      "fastdetect": 0.9662,
      "binoculars": 0.0361,
@@ -76,7 +92,7 @@
      "qwen": 1.0
     },
     "human_flagged_by_source": {
-     "human": 0.0167
+     "human": 0.0
     }
    }
   ],
@@ -118,9 +134,9 @@
    ],
    "cross_validated": true,
    "combined_auroc": 0.9974,
-   "threshold": 0.5,
-   "human_flagged_rate": 0.0221,
-   "ai_caught_rate": 0.9811,
+   "threshold": 0.7826,
+   "human_flagged_rate": 0.011,
+   "ai_caught_rate": 0.9324,
    "note": "以上指标用 5 折交叉验证（每次用没参与拟合的样本）算出；样本越多、越接近你要检测的文本，越可信。",
    "feature_selection": {
     "全部特征": 0.9974,
@@ -135,8 +151,8 @@
     "n_human": 186,
     "n_ai": 207,
     "auroc": 0.9276,
-    "ai_caught": 0.8454,
-    "human_flagged": 0.1022,
+    "ai_caught": 0.7488,
+    "human_flagged": 0.0269,
     "per_signal_auroc": {
      "fastdetect": 0.8117,
      "binoculars": 0.1871,
@@ -151,7 +167,7 @@
      "style_phrases": 0.5053
     },
     "ai_caught_by_model": {
-     "repo-ai-zh-essay": 1.0
+     "repo-ai-zh-essay": 0.9583
     },
     "human_flagged_by_source": {}
    }
@@ -384,9 +400,9 @@
    ],
    "cross_validated": true,
    "combined_auroc": 0.8886,
-   "threshold": 0.6994,
-   "human_flagged_rate": 0.05,
-   "ai_caught_rate": 0.6491,
+   "threshold": 0.765,
+   "human_flagged_rate": 0.0325,
+   "ai_caught_rate": 0.5764,
    "note": "以上指标用 5 折交叉验证（每次用没参与拟合的样本）算出；样本越多、越接近你要检测的文本，越可信。",
    "feature_selection": {
     "全部特征": 0.8886,
@@ -401,8 +417,8 @@
     "n_human": 300,
     "n_ai": 300,
     "auroc": 0.8637,
-    "ai_caught": 0.56,
-    "human_flagged": 0.0733,
+    "ai_caught": 0.4833,
+    "human_flagged": 0.04,
     "per_signal_auroc": {
      "fastdetect": 0.7773,
      "binoculars": 0.2396,
@@ -417,13 +433,13 @@
      "style_phrases": 0.5
     },
     "ai_caught_by_model": {
-     "Deepseek": 0.6,
-     "gpt-4.1": 0.66,
-     "seed": 0.56,
-     "kimi-k2": 0.5133
+     "Deepseek": 0.56,
+     "gpt-4.1": 0.54,
+     "seed": 0.48,
+     "kimi-k2": 0.44
     },
     "human_flagged_by_source": {
-     "human": 0.0733
+     "human": 0.04
     }
    }
   ],

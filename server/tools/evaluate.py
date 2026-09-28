@@ -393,7 +393,15 @@ def evaluate_rows(rows, cal, name):
     return res
 
 
+# 各文体的人写误判率目标。短段文本信号弱、跨数据集漂移大（校准集上 2% 的误判率到测试集上会升到约 10%），
+# 所以预先定得更严（与 Turnitin 对短文本从严的做法一致）。诗词同理：宁可少抓，也不冤枉写诗的人。
+PROFILE_TARGET_FPR = {"zh_short": 0.01, "zh_poetry": 0.03}
+# 自动选特征时，其他组合要比"全部特征"高出这么多才换（避免被交叉验证的随机波动带偏）
+SELECTION_MARGIN = 0.005
+
+
 def fit_profile(prof, parts, target_fpr):
+    target_fpr = PROFILE_TARGET_FPR.get(prof, target_fpr)
     spec = PROFILE_PARTS[prof]
     cal_rows = [r for p in spec["fit"] for r in parts.get(p, [])]
     hs = [r["s"] for r in cal_rows if r["y"] == 0]
@@ -409,7 +417,11 @@ def fit_profile(prof, parts, target_fpr):
         for name, feats in (("全部特征", scoring.EXTENDED_FEATURES), ("三个主信号", scoring.BASE_FEATURES),
                             ("语言模型特征", [f for f in scoring.EXTENDED_FEATURES if f != "logit_classifier"])):
             tried[name] = scoring.calibrate(hs, as_, target_fpr, features=feats)
-        best = max(tried, key=lambda k: (tried[k]["report"].get("combined_auroc") or 0))
+        au = {k: (v["report"].get("combined_auroc") or 0) for k, v in tried.items()}
+        best = "全部特征"
+        for k in tried:
+            if au[k] > au[best] + SELECTION_MARGIN:
+                best = k
         res = tried[best]
         res["report"]["feature_selection"] = {k: v["report"].get("combined_auroc") for k, v in tried.items()}
         res["report"]["feature_set"] = best

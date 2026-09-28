@@ -7,21 +7,21 @@
 
 ## 现代汉语
 - 数据：NLPCC 2025 Task 1（CSL 学术摘要 / 新闻 / 作文；GPT-4o、GLM-4、Qwen）
-- 校准集 392 人写 / 396 AI；阈值 0.5；交叉验证 AUROC 0.9994；特征 fastdetect, binoculars, logit_classifier
-- 特征组合比较（校准集交叉验证 AUROC）：全部特征 0.9993，三个主信号 0.9994，语言模型特征 0.9699 → 选用三个主信号
-- **NLPCC 测试集（训练时未见，含 DeepSeek-V3）**（197 AI / 183 人写）：AUROC 0.9759；检出率 92.9%；误判率 6.0%
+- 校准集 392 人写 / 396 AI；阈值 0.5；交叉验证 AUROC 0.9993；特征 fastdetect, binoculars, logit_classifier, fastdetect_norm, lrr, log_rank, entropy, top10, lp_burstiness, style_cv, style_phrases
+- 特征组合比较（校准集交叉验证 AUROC）：全部特征 0.9993，三个主信号 0.9994，语言模型特征 0.9699 → 选用全部特征
+- **NLPCC 测试集（训练时未见，含 DeepSeek-V3）**（197 AI / 183 人写）：AUROC 0.975；检出率 90.9%；误判率 3.3%
   - 各特征 AUROC：fastdetect 0.8535，binoculars 0.1447，logit_classifier 0.9733，fastdetect_norm 0.8539，lrr 0.8526，log_rank 0.169，entropy 0.2171，top10 0.8663，lp_burstiness 0.8566，style_cv 0.2225，style_phrases 0.514
-- **CSL 学术摘要保留集**（180 AI / 60 人写）：AUROC 1.0；检出率 100.0%；误判率 1.7%
+- **CSL 学术摘要保留集**（180 AI / 60 人写）：AUROC 1.0；检出率 100.0%；误判率 0.0%
   - 各来源检出率：glm 100%，gpt4o 100%，qwen 100%
-  - 各来源误判率：human 2%
+  - 各来源误判率：human 0%
   - 各特征 AUROC：fastdetect 0.9662，binoculars 0.0361，logit_classifier 0.9997，fastdetect_norm 0.9641，lrr 0.9775，log_rank 0.0315，entropy 0.1517，top10 0.9758，lp_burstiness 0.5981，style_cv 0.215，style_phrases 0.8453
 
 ## 现代汉语短段
 - 数据：NLPCC 2025 Task 1 样本截成 80–260 字的短段
-- 校准集 362 人写 / 370 AI；阈值 0.5；交叉验证 AUROC 0.9974；特征 fastdetect, binoculars, logit_classifier, fastdetect_norm, lrr, log_rank, entropy, top10, lp_burstiness, style_cv, style_phrases
+- 校准集 362 人写 / 370 AI；阈值 0.7826；交叉验证 AUROC 0.9974；特征 fastdetect, binoculars, logit_classifier, fastdetect_norm, lrr, log_rank, entropy, top10, lp_burstiness, style_cv, style_phrases
 - 特征组合比较（校准集交叉验证 AUROC）：全部特征 0.9974，三个主信号 0.997，语言模型特征 0.9425 → 选用全部特征
-- **NLPCC 测试集截成 80–260 字的短段（含本仓库 AI 读后感 / 散文）**（207 AI / 186 人写）：AUROC 0.9276；检出率 84.5%；误判率 10.2%
-  - 各来源检出率：repo-ai-zh-essay 100%
+- **NLPCC 测试集截成 80–260 字的短段（含本仓库 AI 读后感 / 散文）**（207 AI / 186 人写）：AUROC 0.9276；检出率 74.9%；误判率 2.7%
+  - 各来源检出率：repo-ai-zh-essay 96%
   - 各特征 AUROC：fastdetect 0.8117，binoculars 0.1871，logit_classifier 0.9266，fastdetect_norm 0.8107，lrr 0.7218，log_rank 0.2551，entropy 0.3652，top10 0.7564，lp_burstiness 0.7114，style_cv 0.3441，style_phrases 0.5053
 
 ## 英文
@@ -47,9 +47,9 @@
 
 ## 诗词
 - 数据：ChangAn 当代旧体诗词（人写）+ DeepSeek / 豆包 / GPT-4.1 生成诗词
-- 校准集 400 人写 / 399 AI；阈值 0.6994；交叉验证 AUROC 0.8886；特征 fastdetect, binoculars, logit_classifier, fastdetect_norm, lrr, log_rank, entropy, top10, style_cv, style_phrases
+- 校准集 400 人写 / 399 AI；阈值 0.765；交叉验证 AUROC 0.8886；特征 fastdetect, binoculars, logit_classifier, fastdetect_norm, lrr, log_rank, entropy, top10, style_cv, style_phrases
 - 特征组合比较（校准集交叉验证 AUROC）：全部特征 0.8886，三个主信号 0.8559，语言模型特征 0.8571 → 选用全部特征
-- **ChangAn 保留集（另一批作者 + 没见过的 Kimi-K2 与其他模型的新诗词）**（300 AI / 300 人写）：AUROC 0.8637；检出率 56.0%；误判率 7.3%
-  - 各来源检出率：Deepseek 60%，gpt-4.1 66%，seed 56%，kimi-k2 51%
-  - 各来源误判率：human 7%
+- **ChangAn 保留集（另一批作者 + 没见过的 Kimi-K2 与其他模型的新诗词）**（300 AI / 300 人写）：AUROC 0.8637；检出率 48.3%；误判率 4.0%
+  - 各来源检出率：Deepseek 56%，gpt-4.1 54%，seed 48%，kimi-k2 44%
+  - 各来源误判率：human 4%
   - 各特征 AUROC：fastdetect 0.7773，binoculars 0.2396，logit_classifier 0.7177，fastdetect_norm 0.7645，lrr 0.7725，log_rank 0.2068，entropy 0.3132，top10 0.7221，lp_burstiness 0.6399，style_cv 0.4159，style_phrases 0.5
