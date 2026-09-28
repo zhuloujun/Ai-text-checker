@@ -23,6 +23,8 @@ short_description: 中文论文 AI 文本检测：Fast-DetectGPT + Binoculars + 
 | **Fast-DetectGPT** | Bao et al., ICLR 2024（[代码](https://github.com/baoguangsheng/fast-detect-gpt)，MIT） | "条件概率曲率"：AI 写作几乎每一步都挑模型认为最可能的字，所以原文的对数概率明显高于"模型随机续写"的期望值。计算 (实际对数概率 − 期望) ÷ 标准差，越高越像 AI。 | Qwen2.5-0.5B（采样）+ Qwen2.5-0.5B-Instruct（打分） |
 | **Binoculars** | Hans et al., ICML 2024（[代码](https://github.com/ahans30/Binoculars)） | 用两个模型"双眼"对照：困惑度 ÷ 交叉困惑度。单看困惑度会把"话题本身就少见"的文字误判为人写，除以交叉困惑度可以抵消话题的影响。越低越像 AI。 | 同上两个模型 |
 | **MPU 中文分类器** | Tian et al., ICLR 2024（[代码](https://github.com/YuchuanTian/AIGC_text_detector)，Apache-2.0） | 用人写 / AI 写的中文语料专门训练的分类模型（RoBERTa），v3 版覆盖推理类大模型。 | [yuchuantian/AIGC_detector_zhv3](https://huggingface.co/yuchuantian/AIGC_detector_zhv3) |
+| **desklib 英文分类器** | desklib（RAID 基准，MIT） | 英文段落专用：DeBERTa-v3-large，发布时位列 RAID 排行榜首位。 | [desklib/ai-text-detector-v1.01](https://huggingface.co/desklib/ai-text-detector-v1.01) |
+| **诗词分类器** | 本仓库 `tools/train_poetry.py` | 诗词、对联专用：在 ChangAn（ACL 2026）上微调 hfl/chinese-roberta-wwm-ext；对没见过的作者与模型 AUROC 约 0.95。模型文件在本仓库 Release `poetry-classifier-v1`，部署时自动取用。 | 本仓库 Release |
 
 另有两部分只做参考、不参与 AI 概率：
 - **统计特征**：句长变化、字符重复率、套话（"综上所述""值得注意的是"等）。
@@ -168,7 +170,7 @@ app/
   config.py          环境变量
   detectors/
     lm_scorer.py     Fast-DetectGPT 与 Binoculars（共用一次推理）
-    classifier.py    MPU 中文分类器
+    classifier.py    分类器（MPU 中文、desklib 英文、诗词专用）
     stylometry.py    统计特征
 static/              网页（检测页、管理页；标点排版检查在浏览器端）
 examples/client.py   API 调用示例
