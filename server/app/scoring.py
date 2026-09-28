@@ -130,7 +130,7 @@ def _fit_logreg(X: list[list[float]], y: list[int], l2: float = 1.0, iters: int 
     return w[:-1].tolist(), float(w[-1])
 
 
-def calibrate(human: list[dict], ai: list[dict], target_fpr: float = 0.05) -> dict:
+def calibrate(human: list[dict], ai: list[dict], target_fpr: float = 0.05, features: list | None = None) -> dict:
     """human / ai：每个元素是一段文字的原始分数字典。返回新的校准 JSON 和评估指标。"""
     if len(human) < 5 or len(ai) < 5:
         raise ValueError(f"有效样本不足：人写 {len(human)} 段、AI {len(ai)} 段，每类至少需要 5 段（建议各 30 段以上）。"
@@ -157,7 +157,7 @@ def calibrate(human: list[dict], ai: list[dict], target_fpr: float = 0.05) -> di
     # 2) 组合：逻辑回归。每类 ≥ 30 段时使用扩展特征，否则只用三个主信号。
     import numpy as np
     n_each = min(len(human), len(ai))
-    candidates = EXTENDED_FEATURES if n_each >= 30 else BASE_FEATURES
+    candidates = list(features) if features else (EXTENDED_FEATURES if n_each >= 30 else BASE_FEATURES)
     all_rows = [(features_of(s, candidates), 0) for s in human] + [(features_of(s, candidates), 1) for s in ai]
     # 丢掉缺失太多的特征（例如没有语言模型时的那些）
     names = [n for j, n in enumerate(candidates)
@@ -235,6 +235,11 @@ def calibrate(human: list[dict], ai: list[dict], target_fpr: float = 0.05) -> di
 # 各文体的文字特征差别很大（英文用英文分类器；文言的困惑度分布与白话完全不同），不能共用一套阈值。
 
 PROFILE_NAMES = {"zh": "现代汉语", "zh_classical": "文言", "en": "英文"}
+# 各文体用哪些特征做组合（用训练时没见过的评估集比较后选定，见 tools/EVAL_REPORT.md）：
+# 英文：分类器 + Fast-DetectGPT + Binoculars 三个主信号，在 GPT-4 新领域和改写文本上都优于全部特征；
+# 现代汉语、文言：全部扩展特征更好。
+PROFILE_FEATURES = {"en": BASE_FEATURES}
+NEAR_MARGIN = 0.15   # 低于阈值不到这么多的段落标为"接近阈值"（不计入 AI 率）
 
 
 def profile_for(cal: dict, register: str):

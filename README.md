@@ -5,7 +5,7 @@
 | 文件夹 | 是什么 | 部署到哪里 | 怎么自动部署 |
 |---|---|---|---|
 | 仓库根目录（`worker.js`、`pages-static/` 等） | **网站入口**：把你的域名转发到完整版；`/lite/` 下保留轻量版（浏览器本地统计检测 + 标点排版检查，可选 GPTZero） | Cloudflare Worker `ai-text-checker`（免费） | Cloudflare 自动构建：`main` 分支有新提交就重新部署 |
-| `server/` | **完整版检测服务**：Fast-DetectGPT + Binoculars + MPU 中文分类器 + 扩展特征，自签发 API Key，可校准 | Modal（按实际运行时间计费，有免费额度） | GitHub Actions：`server/` 有改动时先测试，通过后部署到 Modal |
+| `server/` | **完整版检测服务**：按段落识别文体（现代汉语 / 文言 / 英文）后分别判断——Fast-DetectGPT + Binoculars + 分类器（中文 MPU、英文 desklib）+ 扩展特征，三种文体各自校准；自签发 API Key | Modal（按实际运行时间计费，有免费额度） | GitHub Actions：`server/` 有改动时先测试，通过后部署到 Modal |
 
 ```
 访客 ──→ 你的域名（Cloudflare Worker）──┬─ /lite/ ──→ 轻量版（Worker 自己提供）
@@ -60,6 +60,8 @@ Cloudflare 后台 → **Workers 和 Pages** → `ai-text-checker` → **设置**
 **看部署结果**：
 - 完整版：<https://github.com/zhuloujun/Ai-text-checker/actions> 里的 **部署检测服务到 Modal**。绿色 ✓ 成功；红色 ✗ 点进去看 Summary 里的错误说明。
 - 轻量版：Cloudflare 后台 Worker 页面的 **部署** 标签。
+
+**检测效果**：见 [`server/tools/EVAL_REPORT.md`](server/tools/EVAL_REPORT.md)（每种文体都在训练时没见过的数据上测过检出率和误判率）。修改 `server/tools/` 下的文件并推送后会自动重新评估。
 
 **保存校准结果、永久作废 Key**：在 GitHub 仓库 Settings → Secrets and variables → Actions → **Variables** 标签里新建 `CALIBRATION_JSON` 或 `REVOKED_KEY_IDS`，然后在 Actions 页面重新运行一次部署。
 

@@ -354,6 +354,7 @@ function renderResult(res){
         <div class="para-text">${escapeHtml(preview)}</div>
         <div class="para-tags">
           ${seg.label ? `<span class="para-tag strong">${seg.label}</span>` : ''}
+          ${seg.near_threshold ? '<span class="para-tag" title="低于判定阈值，但相差不大，未计入 AI 率">接近阈值</span>' : ''}
           ${kindTag}${sig}
           <span class="para-tag">第 ${seg.index+1} 段 · ${REG_NAME[seg.register] || '现代汉语'} · ${seg.chars} 字</span>
         </div>
@@ -378,14 +379,14 @@ exportBtn.addEventListener('click', ()=>{
   const s = lastResult.summary;
   let out = `审读 · AI 文本检测报告\n生成时间：${new Date().toLocaleString('zh-CN')}\n来源：${currentSource}\n`;
   out += `总字数：${s.total_chars} · 计入字数：${s.counted_chars} · 未计入：${s.excluded_chars}\n`;
-  out += `AI 率：${pct(s.ai_rate)}（高度 ${pct(s.high_rate)} / 中度 ${pct(s.mid_rate)} / 轻度 ${pct(s.light_rate)}） · 平均 AI 概率：${pct(s.mean_prob)} · 阈值：${pct(s.threshold)} · ${s.calibrated ? '已校准' : '未校准'}\n`;
+  out += `AI 率：${pct(s.ai_rate)}（高度 ${pct(s.high_rate)} / 中度 ${pct(s.mid_rate)} / 轻度 ${pct(s.light_rate)}${s.near_threshold_rate ? ' · 接近阈值 ' + pct(s.near_threshold_rate) : ''}） · 平均 AI 概率：${pct(s.mean_prob)} · 阈值：${pct(s.threshold)} · ${s.calibrated ? '已校准' : '未校准'}\n`;
   (s.reliability_notes || []).forEach(n=>{ out += `提示：${n}\n`; });
   out += `方法：Fast-DetectGPT、Binoculars（Qwen2.5 打分）、MPU 中文分类器、desklib 英文分类器（按段落文体选用）；模式：${s.mode === 'fast' ? '快速（抽样）' : '完整'}\n`;
   if(s.chars_by_register) out += `文体：${Object.entries(s.chars_by_register).map(([k,v])=>`${REG_NAME[k]||k} ${v} 字`).join('、')}\n`;
   out += `\n【说明】任何 AI 检测都有误判，本报告只供作者自查，不能作为学术不端判定依据。\n`;
   out += `\n${'='.repeat(60)}\n分段结果\n${'='.repeat(60)}\n`;
   lastResult.segments.forEach(seg=>{
-    const tag = seg.kind === 'reference' ? '参考文献，不计入' : seg.kind === 'quotation' ? '引文为主，不计入' : (seg.label || '未达阈值');
+    const tag = seg.kind === 'reference' ? '参考文献，不计入' : seg.kind === 'quotation' ? '引文为主，不计入' : (seg.label || (seg.near_threshold ? '接近阈值（未计入）' : '未达阈值'));
     const probStr = seg.prob!=null ? pct(seg.prob) : seg.ref_prob!=null ? `${pct(seg.ref_prob)}（参考值，不计入）` : '—';
     out += `\n[第 ${seg.index+1} 段 | ${REG_NAME[seg.register] || '现代汉语'} | AI 概率 ${probStr} | ${tag} | ${seg.chars} 字]\n`;
     const sg = seg.signals || {}, r = seg.raw || {};

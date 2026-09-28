@@ -214,6 +214,7 @@ class Engine:
         level_counts = {"high": 0, "mid": 0, "light": 0, "low": 0}
         chars_by_register: dict[str, int] = {}
         uncalibrated_regs = set()
+        near_chars = 0
         for s in segs:
             sc = results[s.index]
             comb = combos[s.index]
@@ -221,12 +222,15 @@ class Engine:
             thr = float(pcal.get("threshold", 0.5))
             prob = smoothed.get(s.index) if s.counted else None
             level, label = scoring.level_of(prob, thr) if s.counted else ("none", "")
+            near = bool(s.counted and prob is not None and thr - scoring.NEAR_MARGIN <= prob < thr)
             if s.counted and prob is not None:
                 counted_chars += len(s.text)
                 prob_weighted += prob * len(s.text)
                 chars_by_level[level] += len(s.text)
                 level_counts[level] += 1
                 chars_by_register[s.register] = chars_by_register.get(s.register, 0) + len(s.text)
+                if near:
+                    near_chars += len(s.text)
                 if not has_cal:
                     uncalibrated_regs.add(s.register)
             seg_out.append({
@@ -237,7 +241,7 @@ class Engine:
                 "prob": None if prob is None else round(prob, 4),
                 "ref_prob": (None if s.counted or comb["prob"] is None else round(comb["prob"], 4)),
                 "prob_unsmoothed": None if comb["prob"] is None else round(comb["prob"], 4),
-                "level": level, "label": label,
+                "level": level, "label": label, "near_threshold": near,
                 "signals": {k: (None if v is None else round(v, 4)) for k, v in comb["signals"].items()},
                 "raw": {k: (round(v, 4) if isinstance(v, float) else v) for k, v in sc.items()},
                 "style": styles.get(s.index),
@@ -265,6 +269,9 @@ class Engine:
                          "请把文言部分的结果当作线索而非结论。")
         if main_reg == "zh" and str(cal.get("source", "")).startswith("NLPCC") and cal.get("calibrated"):
             notes.append("使用的是内置默认校准（公开数据集：学术摘要、新闻、作文）；用你自己的文字在管理页校准后会更贴合你的文风。")
+        if near_chars and counted_chars:
+            notes.append(f"另有 {near_chars / counted_chars:.0%} 的文字 AI 概率接近阈值（已标“接近阈值”，未计入 AI 率），"
+                         "可重点复核；AI 翻译、经过改写或人工润色的 AI 文字常落在这一区间。")
         if sampled:
             notes.append(f"快速模式：语言模型只检测了 {len(lm_ids)} 段，其余段落仅用分类器。")
         if fallback_all:
@@ -289,6 +296,7 @@ class Engine:
                 "total_chars": len(text),
                 "counted_chars": counted_chars,
                 "flagged_chars": flagged_chars,
+                "near_threshold_rate": rate(near_chars),
                 "chars_by_level": chars_by_level,
                 "chars_by_register": chars_by_register,
                 "main_register": main_reg,
@@ -444,7 +452,7 @@ def run_calibration(engine: Engine, p: dict, progress=None) -> dict:
 
     hs = engine.raw_scores(human, prog, [profile] * len(human))
     as_ = engine.raw_scores(ai, prog, [profile] * len(ai))
-    res = scoring.calibrate(hs, as_, float(p.get("target_fpr", 0.05)))
+    res = scoring.calibrate(hs, as_, float(p.get("target_fpr", 0.05)), features=scoring.PROFILE_FEATURES.get(profile))
     res["calibration"]["models"] = {"observer": config.OBSERVER_MODEL, "performer": config.PERFORMER_MODEL,
                                     "classifier": config.classifier_for(profile)}
     res["calibration"]["profile"] = profile

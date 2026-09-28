@@ -17,14 +17,14 @@
 
 ## 英文
 - 数据：MAGE（人写文本与 GPT-3.5 / GPT-4 等生成文本）
-- 校准集 296 人写 / 300 AI；阈值 0.601；交叉验证 AUROC 0.9722；特征 fastdetect, binoculars, logit_classifier, fastdetect_norm, lrr, log_rank, entropy, top10, lp_burstiness, style_cv, style_phrases
-- **MAGE：GPT-4 在未见过的领域生成的文本**（150 AI / 150 人写）：AUROC 0.9794；检出率 94.0%；误判率 6.7%
-  - 各来源检出率：cnn_gpt4 89%，imdb_gpt4 91%，pubmed_gpt4 97%，dialogsum_gpt4 100%
-  - 各来源误判率：pubmed_human 2%，dialogsum_human 21%，imdb_human 0%，cnn_human 5%
+- 校准集 296 人写 / 300 AI；阈值 0.6437；交叉验证 AUROC 0.9649；特征 fastdetect, binoculars, logit_classifier
+- **MAGE：GPT-4 在未见过的领域生成的文本**（150 AI / 150 人写）：AUROC 0.9852；检出率 96.0%；误判率 6.0%
+  - 各来源检出率：cnn_gpt4 94%，imdb_gpt4 96%，pubmed_gpt4 94%，dialogsum_gpt4 100%
+  - 各来源误判率：pubmed_human 6%，dialogsum_human 18%，imdb_human 0%，cnn_human 0%
   - 各特征 AUROC：fastdetect 0.8273，binoculars 0.1768，logit_classifier 0.9828，fastdetect_norm 0.8235，lrr 0.7548，log_rank 0.1979，entropy 0.2756，top10 0.7896，lp_burstiness 0.7117，style_cv 0.3014，style_phrases 0.6956
-- **MAGE：GPT-4 文本经改写后（含本仓库英文 AI 样本）**（173 AI / 150 人写）：AUROC 0.8634；检出率 67.6%；误判率 13.3%
-  - 各来源检出率：pubmed_gpt4_para 82%，cnn_gpt4_para 47%，imdb_gpt4_para 71%，dialogsum_gpt4_para 81%，repo-ai-english 57%
-  - 各来源误判率：pubmed_human 16%，imdb_human 0%，pubmed_human_para 0%，cnn_human 12%，dialogsum_human_para 30%，cnn_human_para 19%，imdb_human_para 18%，dialogsum_human 8%
+- **MAGE：GPT-4 文本经改写后（含本仓库英文 AI 样本）**（173 AI / 150 人写）：AUROC 0.8862；检出率 73.4%；误判率 14.0%
+  - 各来源检出率：pubmed_gpt4_para 88%，cnn_gpt4_para 58%，imdb_gpt4_para 81%，dialogsum_gpt4_para 74%，repo-ai-english 61%
+  - 各来源误判率：pubmed_human 11%，imdb_human 0%，pubmed_human_para 0%，cnn_human 6%，dialogsum_human_para 39%，cnn_human_para 24%，imdb_human_para 24%，dialogsum_human 0%
   - 各特征 AUROC：fastdetect 0.5799，binoculars 0.4234，logit_classifier 0.8832，fastdetect_norm 0.5805，lrr 0.6236，log_rank 0.3531，entropy 0.3639，top10 0.6535，lp_burstiness 0.5053，style_cv 0.3114，style_phrases 0.5934
 
 ## 文言

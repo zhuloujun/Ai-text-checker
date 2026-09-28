@@ -316,7 +316,7 @@ def fit_profile(prof, parts, target_fpr):
     as_ = [r["s"] for r in cal_rows if r["y"] == 1]
     if len(hs) < 10 or len(as_) < 10:
         return None
-    res = scoring.calibrate(hs, as_, target_fpr)
+    res = scoring.calibrate(hs, as_, target_fpr, features=scoring.PROFILE_FEATURES.get(prof))
     cal = res["calibration"]
     cal["models"] = {"observer": config.OBSERVER_MODEL, "performer": config.PERFORMER_MODEL,
                      "classifier": config.classifier_for(prof)}
