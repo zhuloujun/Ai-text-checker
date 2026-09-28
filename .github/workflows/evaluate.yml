@@ -14,6 +14,7 @@ on:
     paths:
       - "server/tools/*.py"
       - "server/tools/data/**"
+      - "!server/tools/train_poetry.py"
       - ".github/workflows/evaluate.yml"
   workflow_dispatch:
     inputs:

@@ -97,7 +97,8 @@ def detect_register(text: str) -> str:
     t = _body_lines(text)
     cjk = len(_CJK.findall(t))
     latin = len(_LATIN.findall(t))
-    if latin >= 30 and latin >= 2 * cjk:
+    # 拉丁字母为主就是英文（短诗行也算，例如 "A cap of flowers, and a kirtle" 只有 24 个字母）
+    if latin >= 8 and latin >= 2 * cjk:
         return "en"
     if cjk >= 12 and is_poetry(t):
         return "zh_poetry"

@@ -1,0 +1,66 @@
+# 训练"诗词专用"AI 检测分类器，并把模型发布到本仓库的 Release（poetry-classifier-v1）。
+# 检测服务（Modal）在构建时从 Release 下载这个模型。
+# 触发：修改 server/tools/train_poetry.py 或 server/tools/changan.py 并推送，或在 Actions 页面手动运行。
+name: 训练诗词检测模型
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "server/tools/train_poetry.py"
+      - "server/tools/changan.py"
+      - ".github/workflows/train-poetry.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: train-poetry
+  cancel-in-progress: true
+
+env:
+  RELEASE_TAG: poetry-classifier-v1
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: server/requirements.txt
+      - name: 安装依赖
+        run: |
+          pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install -r server/requirements.txt openpyxl
+      - name: 缓存底座模型
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-chinese-roberta-wwm-ext
+      - name: 下载底座模型与数据集
+        run: |
+          python server/download_models.py hfl/chinese-roberta-wwm-ext
+          git clone --depth 1 https://github.com/VelikayaScarlet/ChangAn /tmp/changan
+      - name: 训练（约 1.5–3 小时）
+        env:
+          TORCH_THREADS: "4"
+          TOKENIZERS_PARALLELISM: "false"
+        run: |
+          python -u server/tools/train_poetry.py --changan /tmp/changan --out /tmp/poetry-classifier \
+            --epochs 2 --time-budget-min 270
+      - name: 发布到 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tar czf poetry-classifier.tar.gz -C /tmp poetry-classifier
+          ls -la poetry-classifier.tar.gz
+          gh release view "$RELEASE_TAG" >/dev/null 2>&1 || \
+            gh release create "$RELEASE_TAG" --title "诗词 AI 检测模型" \
+              --notes "由 server/tools/train_poetry.py 在 ChangAn 数据集上微调 hfl/chinese-roberta-wwm-ext 得到；检测服务构建时自动下载。"
+          gh release upload "$RELEASE_TAG" poetry-classifier.tar.gz --clobber
+          echo "::notice title=已发布::https://github.com/${{ github.repository }}/releases/tag/$RELEASE_TAG"
