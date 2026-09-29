@@ -40,11 +40,11 @@ Cloudflare 后台 → **Workers 和 Pages** → `ai-text-checker` → **设置**
 2. **生成令牌**：登录后点左下角或右上角的 **Settings**（设置）→ **API Tokens** → **New Token**，页面会显示两串字符：
    - `Token ID`（以 `ak-` 开头）
    - `Token Secret`（以 `as-` 开头，只显示一次）
-3. **存进 GitHub**：打开 <https://github.com/zhuloujun/Ai-text-checker/settings/secrets/actions> → **New repository secret**，添加两个：
+3. **存进 GitHub**：打开 <https://github.com/zhuloujun/ceshi/settings/secrets/actions> → **New repository secret**，添加两个：
    - Name `MODAL_TOKEN_ID`，Secret 填 `ak-…`
    - Name `MODAL_TOKEN_SECRET`，Secret 填 `as-…`
    - 管理员密码沿用已添加的 `HF_ADMIN_TOKEN`，不用再加。
-4. **第一次部署**：打开 <https://github.com/zhuloujun/Ai-text-checker/actions> → 左侧 **部署检测服务到 Modal** → **Run workflow**。
+4. **第一次部署**：打开 <https://github.com/zhuloujun/ceshi/actions> → 左侧 **部署检测服务到 Modal** → **Run workflow**。
    - 首次要构建镜像、下载约 2 GB 模型，约 10–20 分钟。
    - 完成后，在这次运行的页面顶部（Summary）能看到网站地址，形如 `https://<你的 Modal 用户名>--ai-text-checker-web.modal.run`。
 5. 打开 `网站地址/admin`，输入 `HF_ADMIN_TOKEN` 的密码，生成 API Key。
@@ -58,7 +58,7 @@ Cloudflare 后台 → **Workers 和 Pages** → `ai-text-checker` → **设置**
 **在网页上改（不需要装任何软件）**：在 GitHub 打开要改的文件 → 点铅笔图标 ✏️ → 修改 → **Commit changes**。几分钟后网站会自动更新。
 
 **看部署结果**：
-- 完整版：<https://github.com/zhuloujun/Ai-text-checker/actions> 里的 **部署检测服务到 Modal**。绿色 ✓ 成功；红色 ✗ 点进去看 Summary 里的错误说明。
+- 完整版：<https://github.com/zhuloujun/ceshi/actions> 里的 **部署检测服务到 Modal**。绿色 ✓ 成功；红色 ✗ 点进去看 Summary 里的错误说明。
 - 轻量版：Cloudflare 后台 Worker 页面的 **部署** 标签。
 
 **检测效果**：见 [`server/tools/EVAL_REPORT.md`](server/tools/EVAL_REPORT.md)（每种文体都在训练时没见过的数据上测过检出率和误判率）。修改 `server/tools/` 下的文件并推送后会自动重新评估。

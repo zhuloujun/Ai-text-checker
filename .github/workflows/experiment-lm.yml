@@ -1,7 +1,7 @@
-# 对比实验：换更大的打分语言模型（默认 Qwen2.5-1.5B）后，各文体的检测效果是否更好。
-# 与"评估并生成默认校准"用完全相同的样本，结果只写到 server/tools/experiments/<名称>/，不改动线上使用的校准。
-# 触发：修改本文件并推送，或在 Actions 页面手动运行（可填别的模型）。
-name: 对比实验：更大的打分模型
+# 实验：用更大的打分模型（默认 Qwen2.5-1.5B 基础版 + 对话版）重新打分全部评估集，与现用的 0.5B 对比。
+# 结果只写到 server/tools/experiments/<标签>/，不改动线上使用的校准。
+# 触发：在 Actions 页面手动运行（可填模型名），或修改本文件并推送。
+name: 对比更大的打分模型
 
 on:
   push:
@@ -11,13 +11,13 @@ on:
   workflow_dispatch:
     inputs:
       observer:
-        description: "观察者（基础版）模型"
+        description: "采样 / 观察模型（基础版）"
         default: "Qwen/Qwen2.5-1.5B"
       performer:
-        description: "执行者（对话版）模型"
+        description: "打分模型（对话版，须与上面同一系列、同一分词器）"
         default: "Qwen/Qwen2.5-1.5B-Instruct"
-      name:
-        description: "实验名称（结果目录名）"
+      tag:
+        description: "结果目录名"
         default: "qwen2.5-1.5b"
 
 permissions:
@@ -30,7 +30,7 @@ concurrency:
 env:
   OBSERVER_MODEL: ${{ github.event.inputs.observer || 'Qwen/Qwen2.5-1.5B' }}
   PERFORMER_MODEL: ${{ github.event.inputs.performer || 'Qwen/Qwen2.5-1.5B-Instruct' }}
-  EXP_NAME: ${{ github.event.inputs.name || 'qwen2.5-1.5b' }}
+  TAG: ${{ github.event.inputs.tag || 'qwen2.5-1.5b' }}
   N_CAL: "800"
   N_TEST: "400"
   N_CSL: "240"
@@ -45,7 +45,7 @@ jobs:
   score:
     name: 打分 ${{ matrix.part }}
     runs-on: ubuntu-latest
-    timeout-minutes: 340
+    timeout-minutes: 350
     strategy:
       fail-fast: false
       matrix:
@@ -61,25 +61,14 @@ jobs:
         run: |
           pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cpu
           pip install -r server/requirements.txt openpyxl opencc-python-reimplemented
-      - name: 只加载这一份需要的分类器（省内存：两个 1.5B 模型约占 12 GB）
-        run: |
-          case "${{ matrix.part }}" in
-            en_*) echo "ENABLE_CLASSIFIER=false" >> "$GITHUB_ENV" ;;
-            *)    echo "ENABLE_EN_CLASSIFIER=false" >> "$GITHUB_ENV" ;;
-          esac
       - name: 缓存模型
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface
-          key: hf-exp-${{ env.EXP_NAME }}-mpu-desklib
+          key: hf-models-exp-${{ env.TAG }}-mpu-desklib
       - name: 下载模型
         working-directory: server
-        run: |
-          case "${{ matrix.part }}" in
-            en_*) CLS=desklib/ai-text-detector-v1.01 ;;
-            *)    CLS=yuchuantian/AIGC_detector_zhv3 ;;
-          esac
-          python download_models.py "$OBSERVER_MODEL" "$PERFORMER_MODEL" $CLS
+        run: python download_models.py "$OBSERVER_MODEL" "$PERFORMER_MODEL" yuchuantian/AIGC_detector_zhv3 desklib/ai-text-detector-v1.01
       - name: 下载数据集（现代汉语：NLPCC 2025 Task 1）
         if: ${{ !startsWith(matrix.part, 'en_') && !startsWith(matrix.part, 'cl_') && !startsWith(matrix.part, 'po_') }}
         run: git clone --depth 1 https://github.com/NLP2CT/NLPCC-2025-Task1 /tmp/nlpcc
@@ -91,7 +80,7 @@ jobs:
           for f in ["test.csv", "test_ood_set_gpt.csv", "test_ood_set_gpt_para.csv"]:
               print(hf_hub_download("yaful/MAGE", f, repo_type="dataset", local_dir="/tmp/mage"))
           PY
-      - name: 下载数据集（诗词）和诗词分类器
+      - name: 下载数据集（诗词：ChangAn）和诗词分类器（本仓库 Release）
         if: ${{ startsWith(matrix.part, 'po_') }}
         env:
           GH_TOKEN: ${{ github.token }}
@@ -101,6 +90,7 @@ jobs:
           (cd /tmp/cpoetry && git sparse-checkout set --no-cone "/全唐诗/唐诗三百首.json" "/宋词/宋词三百首.json")
           gh release download poetry-classifier-v1 -p poetry-classifier.tar.gz -D /tmp -R "${{ github.repository }}"
           tar xzf /tmp/poetry-classifier.tar.gz -C /tmp
+          ls /tmp/poetry-classifier
           echo "POETRY_CLASSIFIER_MODEL=/tmp/poetry-classifier" >> "$GITHUB_ENV"
       - name: 下载数据集（文言：NiuTrans 古文语料，只取用到的书）
         if: ${{ startsWith(matrix.part, 'cl_') }}
@@ -113,13 +103,18 @@ jobs:
           print(" ".join(f"/古文原文/{b}/" for b in CLASSICAL_CAL_BOOKS + CLASSICAL_TEST_BOOKS))
           PY
           )
+          ls 古文原文 | head -40
       - name: 打分
         working-directory: server
         env:
           TORCH_THREADS: "4"
           TOKENIZERS_PARALLELISM: "false"
         run: |
-          free -g
+          # 只加载这一份需要的分类器，给更大的语言模型腾出内存
+          case "${{ matrix.part }}" in
+            en_*) export ENABLE_CLASSIFIER=0 ;;
+            *) export ENABLE_EN_CLASSIFIER=0 ;;
+          esac
           python tools/evaluate.py --stage score --part ${{ matrix.part }} --data /tmp/nlpcc/data \
             --mage-dir /tmp/mage --classical-dir /tmp/classical --changan-dir /tmp/changan --cpoetry-dir /tmp/cpoetry --scores-dir /tmp/scores \
             --n-cal $N_CAL --n-test $N_TEST --n-csl $N_CSL --n-en-cal $N_EN_CAL --n-en-test $N_EN_TEST \
@@ -130,17 +125,17 @@ jobs:
           path: /tmp/scores/${{ matrix.part }}.json
 
   fit:
-    name: 拟合、评估并与现用模型对比
+    name: 拟合、评估并与 0.5B 对比
     needs: score
     if: always()
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install numpy openpyxl opencc-python-reimplemented
+      - run: pip install numpy
       - uses: actions/download-artifact@v4
         with:
           pattern: exp-scores-*
@@ -153,18 +148,22 @@ jobs:
           EN_CLASSIFIER_MODEL: desklib/ai-text-detector-v1.01
           POETRY_CLASSIFIER_MODEL: /tmp/poetry-classifier
         run: |
-          OUT=tools/experiments/$EXP_NAME
-          mkdir -p $OUT/app $OUT/tools $OUT/scores
-          cp /tmp/dl/*.json $OUT/scores/
-          python tools/evaluate.py --stage fit --scores-dir $OUT/scores --out $OUT --target-fpr 0.05
-      - name: 提交实验结果（不影响线上校准）
+          ls -la /tmp/dl
+          mkdir -p /tmp/expout/app /tmp/expout/tools
+          python tools/evaluate.py --stage fit --scores-dir /tmp/dl --out /tmp/expout --target-fpr 0.05
+          D="tools/experiments/$TAG"
+          mkdir -p "$D/scores"
+          cp /tmp/expout/tools/EVAL_REPORT.md /tmp/expout/tools/eval_result.json /tmp/expout/app/default_calibration.json "$D/"
+          cp /tmp/dl/*.json "$D/scores/"
+          python tools/compare_experiment.py tools/eval_result.json "$D/eval_result.json" "$TAG" > "$D/COMPARISON.md"
+          cat "$D/COMPARISON.md" >> "$GITHUB_STEP_SUMMARY"
+          mkdir -p /tmp/result && cp -r "$D" /tmp/result/
+      - name: 把结果提交回仓库
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          mkdir -p /tmp/result && cp -r server/tools/experiments/$EXP_NAME /tmp/result/
           git fetch origin main && git reset --hard origin/main
-          mkdir -p server/tools/experiments && rm -rf server/tools/experiments/$EXP_NAME
-          cp -r /tmp/result/$EXP_NAME server/tools/experiments/
-          git add server/tools/experiments/$EXP_NAME
-          git commit -m "Experiment results: $OBSERVER_MODEL + $PERFORMER_MODEL" || exit 0
+          mkdir -p server/tools/experiments && cp -r /tmp/result/"$TAG" server/tools/experiments/
+          git add server/tools/experiments
+          git commit -m "Experiment: score all evaluation sets with $OBSERVER_MODEL / $PERFORMER_MODEL" || exit 0
           git push origin HEAD:main

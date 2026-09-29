@@ -12,7 +12,7 @@ short_description: 中文论文 AI 文本检测：Fast-DetectGPT + Binoculars + 
 
 # 审读 · 中文论文 AI 文本检测（自部署版）
 
-> 代码在 GitHub 仓库 [zhuloujun/Ai-text-checker](https://github.com/zhuloujun/Ai-text-checker) 的 `server/` 文件夹。默认通过 GitHub Actions 自动部署到 **Modal**（见仓库首页 README）；也可以部署到 Hugging Face（需要 PRO）或任何能运行 Docker 的服务器。
+> 代码在 GitHub 仓库 [zhuloujun/ceshi](https://github.com/zhuloujun/ceshi) 的 `server/` 文件夹。默认通过 GitHub Actions 自动部署到 **Modal**（见仓库首页 README）；也可以部署到 Hugging Face（需要 PRO）或任何能运行 Docker 的服务器。
 
 部署在你自己的服务器上（默认 Modal），自己签发 API Key，不依赖任何付费检测服务。
 

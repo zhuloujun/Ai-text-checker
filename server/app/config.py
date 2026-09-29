@@ -37,7 +37,7 @@ POETRY_CLASSIFIER_MODEL = os.getenv("POETRY_CLASSIFIER_MODEL", "")
 POETRY_CLASSIFIER_ID = os.getenv("POETRY_CLASSIFIER_ID", "poetry-classifier-v1")   # 校准参数按这个名字匹配模型
 POETRY_CLASSIFIER_URL = os.getenv(
     "POETRY_CLASSIFIER_URL",
-    "https://github.com/zhuloujun/Ai-text-checker/releases/download/poetry-classifier-v1/poetry-classifier.tar.gz")
+    "https://github.com/zhuloujun/ceshi/releases/download/poetry-classifier-v1/poetry-classifier.tar.gz")
 
 ENABLE_LM = _bool("ENABLE_LM", True)
 ENABLE_CLASSIFIER = _bool("ENABLE_CLASSIFIER", True)

@@ -15,6 +15,7 @@ on:
       - "server/tools/*.py"
       - "server/tools/data/**"
       - "!server/tools/train_poetry.py"
+      - "!server/tools/compare_experiment.py"
       - ".github/workflows/evaluate.yml"
   workflow_dispatch:
     inputs:

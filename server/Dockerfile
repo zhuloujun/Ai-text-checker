@@ -22,7 +22,7 @@ ARG OBSERVER_MODEL=Qwen/Qwen2.5-0.5B
 ARG PERFORMER_MODEL=Qwen/Qwen2.5-0.5B-Instruct
 ARG CLASSIFIER_MODEL=yuchuantian/AIGC_detector_zhv3
 ARG EN_CLASSIFIER_MODEL=desklib/ai-text-detector-v1.01
-ARG POETRY_URL=https://github.com/zhuloujun/Ai-text-checker/releases/download/poetry-classifier-v1/poetry-classifier.tar.gz
+ARG POETRY_URL=https://github.com/zhuloujun/ceshi/releases/download/poetry-classifier-v1/poetry-classifier.tar.gz
 ENV POETRY_CLASSIFIER_MODEL=/home/user/app/poetry-classifier
 RUN python download_models.py "$OBSERVER_MODEL" "$PERFORMER_MODEL" "$CLASSIFIER_MODEL" "$EN_CLASSIFIER_MODEL" "$POETRY_URL=$POETRY_CLASSIFIER_MODEL"
 
