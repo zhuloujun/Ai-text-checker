@@ -347,7 +347,7 @@
     "human_flagged": 0.021,
     "per_signal_auroc": {
      "fastdetect": 0.8934,
-     "binoculars": 0.103,
+     "binoculars": 0.1028,
      "logit_classifier": 0.992,
      "fastdetect_norm": 0.8892,
      "lrr": 0.9318,

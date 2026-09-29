@@ -46,7 +46,7 @@
 - **文言保留集（另一组古籍 + 未参与校准的 AI 文言）**（40 AI / 143 人写）：AUROC 0.9944；检出率 92.5%；误判率 2.1%
   - 各来源检出率：llm-classical 92%
   - 各来源误判率：入蜀记 0%，唐传奇 0%，困学纪闻 0%，幽明录 0%，搜神记 0%，新唐书 9%，旧五代史 0%，明夷待访录 0%，武林旧事 0%，聊斋志异 0%，西湖梦寻 9%，资治通鉴 0%，金史 0%，陶庵梦忆 9%
-  - 各特征 AUROC：fastdetect 0.8934，binoculars 0.103，logit_classifier 0.992，fastdetect_norm 0.8892，lrr 0.9318，log_rank 0.0675，entropy 0.1315，top10 0.914，lp_burstiness 0.5708，style_cv 0.4562，style_phrases 0.4965
+  - 各特征 AUROC：fastdetect 0.8934，binoculars 0.1028，logit_classifier 0.992，fastdetect_norm 0.8892，lrr 0.9318，log_rank 0.0675，entropy 0.1315，top10 0.914，lp_burstiness 0.5708，style_cv 0.4562，style_phrases 0.4965
 - **国产新模型 AI 文言故事（DeepSeek / Kimi / 文心一言；不参与校准，但其中 2/3 用于训练文言分类器，没见过的那 1/3 见分类器训练报告）**（50 AI / 0 人写）：AUROC None；检出率 80.0%
   - 各来源检出率：repo-ai-deepseek 75%，repo-ai-kimi 83%，repo-ai-wenxin 90%
   - 各特征 AUROC：
