@@ -41,7 +41,7 @@ sys.path.insert(0, str(ROOT))
 
 from app import config, scoring  # noqa: E402
 from app.engine import Engine  # noqa: E402
-from app.segmenter import segment_text  # noqa: E402
+from app.segmenter import normalize_classical, segment_text  # noqa: E402
 
 DATA_DIR = ROOT / "tools" / "data"
 
@@ -135,7 +135,8 @@ def to_segment(text, profile):
     segs = [s.text for s in segment_text(text, True, profile == "zh") if s.counted]
     if not segs:
         return None
-    return max(segs, key=len)
+    best = max(segs, key=len)
+    return normalize_classical(best) if profile == "zh_classical" else best
 
 
 # ---------------- 各文体的数据 ----------------

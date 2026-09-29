@@ -66,8 +66,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if grep -q '"classical-classifier-v1"' server/app/default_calibration.json; then
-            gh release download classical-classifier-v1 -p classical-classifier.tar.gz -D /tmp -R "${{ github.repository }}"
+          if grep -q '"classical-classifier-v2"' server/app/default_calibration.json; then
+            gh release download classical-classifier-v2 -p classical-classifier.tar.gz -D /tmp -R "${{ github.repository }}"
             tar xzf /tmp/classical-classifier.tar.gz -C server/
             ls server/classical-classifier
           else

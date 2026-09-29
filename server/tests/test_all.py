@@ -609,3 +609,12 @@ def test_classical_uses_classical_classifier_and_mpu_second_opinion(client):
     res = client.post("/v1/detect", json={"text": CLASSICAL * 3}, headers=h).json()["result"]
     seg = [s for s in res["segments"] if s["register"] == "zh_classical"][0]
     assert "classifier" in seg["raw"] and "classifier_mpu" in seg["raw"]
+
+
+def test_classical_text_fed_to_models_has_no_quotes():
+    """古籍语料不带引号、AI 文言多带引号：文言送进模型前去掉引号，避免模型把"有引号"当成 AI 特征。"""
+    from app.engine import score_text
+    segs = segment_text("《某篇》\n\n" + "生曰：“善。”女曰：\"诺。\"" + CLASSICAL, True, True)
+    s = [x for x in segs if x.register == "zh_classical"][0]
+    t = score_text(s)
+    assert not any(q in t for q in "“”\"「」") and "生曰：善。" in t

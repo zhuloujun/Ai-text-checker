@@ -15,7 +15,7 @@ from . import config, scoring
 from .detectors import stylometry
 from .detectors.classifier import Classifier, make_english_classifier
 from .detectors.lm_scorer import LMScorer
-from .segmenter import REGISTER_NAMES, detect_register, min_chars, segment_text
+from .segmenter import REGISTER_NAMES, detect_register, min_chars, normalize_classical, segment_text
 
 log = logging.getLogger("engine")
 
@@ -47,12 +47,13 @@ def is_short(seg, text: str) -> bool:
 
 
 def score_text(seg) -> str:
-    """送进模型打分的文字：去掉开头的标题行（标题不是作者的正文，短诗里标题占比又很大）。"""
+    """送进模型打分的文字：去掉开头的标题行（标题不是作者的正文，短诗里标题占比又很大）；文言去掉引号。"""
+    text = seg.text
     if seg.title and seg.text.startswith(seg.title):
         rest = seg.text[len(seg.title):].strip()
         if len(rest) >= 10:
-            return rest
-    return seg.text
+            text = rest
+    return normalize_classical(text) if seg.register == "zh_classical" else text
 
 
 def works_summary(seg_out: list) -> list:

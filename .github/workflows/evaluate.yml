@@ -43,7 +43,7 @@ env:
   N_CL_HUMAN_TEST: "160"
   N_PO_CAL: "800"
   N_PO_TEST: "600"
-  PUSH_PARTS: '["cl_user","po_user","en_user"]'
+  PUSH_PARTS: '["cl_cal","cl_test","cl_user"]'
 
 jobs:
   plan:
@@ -127,7 +127,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release download classical-classifier-v1 -p classical-classifier.tar.gz -D /tmp -R "${{ github.repository }}"; then
+          if gh release download classical-classifier-v2 -p classical-classifier.tar.gz -D /tmp -R "${{ github.repository }}"; then
             tar xzf /tmp/classical-classifier.tar.gz -C /tmp
             echo "CLASSICAL_CLASSIFIER_MODEL=/tmp/classical-classifier" >> "$GITHUB_ENV"
           fi

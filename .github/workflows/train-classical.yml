@@ -1,4 +1,4 @@
-# 训练"文言专用"AI 检测分类器，并把模型发布到本仓库的 Release（classical-classifier-v1）。
+# 训练"文言专用"AI 检测分类器，并把模型发布到本仓库的 Release（classical-classifier-v2）。
 # 触发：修改 server/tools/train_classical.py 或 AI 文言样本（server/tools/data/ai_*classical*）并推送，或在 Actions 页面手动运行。
 name: 训练文言检测模型
 
@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  RELEASE_TAG: classical-classifier-v1
+  RELEASE_TAG: classical-classifier-v2
 
 jobs:
   train:

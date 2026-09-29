@@ -9,7 +9,8 @@
   人写 · 评估：evaluate.py 的 CLASSICAL_TEST_BOOKS（含《聊斋志异》《搜神记》《唐传奇》等志怪传奇，专门检查会不会冤枉真人仿古）
   AI：tools/data/ai_classical_*.txt 与 ai_user_classical_*.txt；每个来源按顺序每 3 篇留 1 篇作评估，
       划分规则与 evaluate.py 一致，评估用的 AI 文言从不参与训练。
-人写段落按 AI 样本的长度分布截取，避免"长度"成为区分线索。
+人写段落按 AI 样本的长度分布截取，避免"长度"成为区分线索；两类文字都去掉引号（古籍语料排印时不用引号，
+AI 文言几乎都带引号，不去掉的话模型会学成"有引号就是 AI"，第一版就因此把带引号的《搜神记》段落误判为 AI）。
 
 用法：python tools/train_classical.py --classical-dir <NiuTrans 目录> --out <输出目录>
 """
@@ -67,12 +68,15 @@ def main():
     torch.manual_seed(0)
     rnd = random.Random(0)
 
-    ai = ai_rows()
+    from app.segmenter import normalize_classical
+    ai = [dict(r, text=normalize_classical(r["text"])) for r in ai_rows()]
     ai_train = [r for r in ai if r["split"] == "train"]
     ai_test = [r for r in ai if r["split"] == "test"]
     lengths = [len(r["text"]) for r in ai]
     h_train = ev.classical_passages(args.classical_dir, TRAIN_BOOKS, args.n_human_train, 31, lengths)
     h_test = ev.classical_passages(args.classical_dir, ev.CLASSICAL_TEST_BOOKS, args.n_human_test, 32, lengths)
+    h_train = [dict(r, text=normalize_classical(r["text"])) for r in h_train]
+    h_test = [dict(r, text=normalize_classical(r["text"])) for r in h_test]
     if len(h_train) < 60 or len(h_test) < 30:
         raise SystemExit(f"人写古籍段落太少（训练 {len(h_train)} / 评估 {len(h_test)}），请检查数据下载")
 
