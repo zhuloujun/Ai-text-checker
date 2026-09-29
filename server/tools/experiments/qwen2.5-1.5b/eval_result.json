@@ -1,0 +1,507 @@
+{
+ "zh": {
+  "calibration_report": {
+   "n_human": 400,
+   "n_ai": 396,
+   "auroc": {
+    "fastdetect": 0.9235,
+    "binoculars": 0.9239,
+    "classifier": 0.9999,
+    "fastdetect_norm": 0.9251,
+    "lrr": 0.8822,
+    "log_rank": 0.8566,
+    "entropy": 0.7783,
+    "top10": 0.8651,
+    "lp_burstiness": 0.6712,
+    "style_cv": 0.8598,
+    "style_phrases": 0.7785
+   },
+   "features_used": [
+    "fastdetect",
+    "binoculars",
+    "logit_classifier",
+    "fastdetect_norm",
+    "lrr",
+    "log_rank",
+    "entropy",
+    "top10",
+    "lp_burstiness",
+    "style_cv",
+    "style_phrases"
+   ],
+   "cross_validated": true,
+   "combined_auroc": 0.9998,
+   "threshold": 0.5,
+   "human_flagged_rate": 0.02,
+   "ai_caught_rate": 0.9975,
+   "note": "以上指标用 5 折交叉验证（每次用没参与拟合的样本）算出；样本越多、越接近你要检测的文本，越可信。",
+   "feature_selection": {
+    "全部特征": 0.9998,
+    "三个主信号": 0.9999,
+    "语言模型特征": 0.9782
+   },
+   "feature_set": "全部特征"
+  },
+  "evaluation": [
+   {
+    "name": "NLPCC 测试集（训练时未见，含 DeepSeek-V3）",
+    "n_human": 200,
+    "n_ai": 200,
+    "auroc": 0.9738,
+    "ai_caught": 0.84,
+    "human_flagged": 0.035,
+    "per_signal_auroc": {
+     "fastdetect": 0.8466,
+     "binoculars": 0.1525,
+     "logit_classifier": 0.9727,
+     "fastdetect_norm": 0.846,
+     "lrr": 0.848,
+     "log_rank": 0.1702,
+     "entropy": 0.1818,
+     "top10": 0.8686,
+     "lp_burstiness": 0.8842,
+     "style_cv": 0.2175,
+     "style_phrases": 0.5042
+    },
+    "ai_caught_by_model": {},
+    "human_flagged_by_source": {}
+   },
+   {
+    "name": "CSL 学术摘要保留集",
+    "n_human": 60,
+    "n_ai": 180,
+    "auroc": 1.0,
+    "ai_caught": 1.0,
+    "human_flagged": 0.0,
+    "per_signal_auroc": {
+     "fastdetect": 0.9587,
+     "binoculars": 0.0421,
+     "logit_classifier": 0.9997,
+     "fastdetect_norm": 0.9558,
+     "lrr": 0.9843,
+     "log_rank": 0.0313,
+     "entropy": 0.1302,
+     "top10": 0.9761,
+     "lp_burstiness": 0.6775,
+     "style_cv": 0.2154,
+     "style_phrases": 0.8452
+    },
+    "ai_caught_by_model": {
+     "glm": 1.0,
+     "gpt4o": 1.0,
+     "qwen": 1.0
+    },
+    "human_flagged_by_source": {
+     "human": 0.0
+    }
+   }
+  ],
+  "models": {
+   "observer": "Qwen/Qwen2.5-1.5B",
+   "performer": "Qwen/Qwen2.5-1.5B-Instruct",
+   "classifier": "yuchuantian/AIGC_detector_zhv3"
+  }
+ },
+ "zh_short": {
+  "calibration_report": {
+   "n_human": 362,
+   "n_ai": 370,
+   "auroc": {
+    "fastdetect": 0.9188,
+    "binoculars": 0.9196,
+    "classifier": 0.994,
+    "fastdetect_norm": 0.9208,
+    "lrr": 0.8494,
+    "log_rank": 0.8296,
+    "entropy": 0.7293,
+    "top10": 0.8332,
+    "lp_burstiness": 0.6619,
+    "style_cv": 0.5457,
+    "style_phrases": 0.6241
+   },
+   "features_used": [
+    "fastdetect",
+    "binoculars",
+    "logit_classifier",
+    "fastdetect_norm",
+    "lrr",
+    "log_rank",
+    "entropy",
+    "top10",
+    "lp_burstiness",
+    "style_cv",
+    "style_phrases"
+   ],
+   "cross_validated": true,
+   "combined_auroc": 0.9967,
+   "threshold": 0.7692,
+   "human_flagged_rate": 0.0083,
+   "ai_caught_rate": 0.9405,
+   "note": "以上指标用 5 折交叉验证（每次用没参与拟合的样本）算出；样本越多、越接近你要检测的文本，越可信。",
+   "feature_selection": {
+    "全部特征": 0.9967,
+    "三个主信号": 0.9957,
+    "语言模型特征": 0.9352
+   },
+   "feature_set": "全部特征"
+  },
+  "evaluation": [
+   {
+    "name": "NLPCC 测试集截成 80–260 字的短段（含本仓库 AI 读后感 / 散文）",
+    "n_human": 186,
+    "n_ai": 207,
+    "auroc": 0.9311,
+    "ai_caught": 0.7681,
+    "human_flagged": 0.0376,
+    "per_signal_auroc": {
+     "fastdetect": 0.821,
+     "binoculars": 0.1762,
+     "logit_classifier": 0.9266,
+     "fastdetect_norm": 0.8217,
+     "lrr": 0.7326,
+     "log_rank": 0.2492,
+     "entropy": 0.3094,
+     "top10": 0.7822,
+     "lp_burstiness": 0.7257,
+     "style_cv": 0.3441,
+     "style_phrases": 0.5053
+    },
+    "ai_caught_by_model": {
+     "repo-ai-zh-essay": 0.9583
+    },
+    "human_flagged_by_source": {}
+   }
+  ],
+  "models": {
+   "observer": "Qwen/Qwen2.5-1.5B",
+   "performer": "Qwen/Qwen2.5-1.5B-Instruct",
+   "classifier": "yuchuantian/AIGC_detector_zhv3"
+  }
+ },
+ "en": {
+  "calibration_report": {
+   "n_human": 296,
+   "n_ai": 300,
+   "auroc": {
+    "fastdetect": 0.7542,
+    "binoculars": 0.7492,
+    "classifier": 0.9618
+   },
+   "features_used": [
+    "fastdetect",
+    "binoculars",
+    "logit_classifier"
+   ],
+   "cross_validated": true,
+   "combined_auroc": 0.9653,
+   "threshold": 0.6601,
+   "human_flagged_rate": 0.0473,
+   "ai_caught_rate": 0.85,
+   "note": "以上指标用 5 折交叉验证（每次用没参与拟合的样本）算出；样本越多、越接近你要检测的文本，越可信。"
+  },
+  "evaluation": [
+   {
+    "name": "MAGE：GPT-4 在未见过的领域生成的文本",
+    "n_human": 150,
+    "n_ai": 150,
+    "auroc": 0.9856,
+    "ai_caught": 0.9533,
+    "human_flagged": 0.0533,
+    "per_signal_auroc": {
+     "fastdetect": 0.7613,
+     "binoculars": 0.2452,
+     "logit_classifier": 0.9828,
+     "fastdetect_norm": 0.7597,
+     "lrr": 0.7597,
+     "log_rank": 0.1868,
+     "entropy": 0.2384,
+     "top10": 0.8018,
+     "lp_burstiness": 0.7254,
+     "style_cv": 0.3014,
+     "style_phrases": 0.6956
+    },
+    "ai_caught_by_model": {
+     "cnn_gpt4": 0.9143,
+     "imdb_gpt4": 0.9574,
+     "pubmed_gpt4": 0.9444,
+     "dialogsum_gpt4": 1.0
+    },
+    "human_flagged_by_source": {
+     "pubmed_human": 0.0612,
+     "dialogsum_human": 0.1471,
+     "imdb_human": 0.0,
+     "cnn_human": 0.0
+    }
+   },
+   {
+    "name": "MAGE：GPT-4 文本经改写后（含本仓库英文 AI 样本）",
+    "n_human": 150,
+    "n_ai": 173,
+    "auroc": 0.8822,
+    "ai_caught": 0.711,
+    "human_flagged": 0.1333,
+    "per_signal_auroc": {
+     "fastdetect": 0.5498,
+     "binoculars": 0.4572,
+     "logit_classifier": 0.8832,
+     "fastdetect_norm": 0.5465,
+     "lrr": 0.6303,
+     "log_rank": 0.3566,
+     "entropy": 0.3618,
+     "top10": 0.6513,
+     "lp_burstiness": 0.5175,
+     "style_cv": 0.3114,
+     "style_phrases": 0.5934
+    },
+    "ai_caught_by_model": {
+     "pubmed_gpt4_para": 0.8367,
+     "cnn_gpt4_para": 0.5814,
+     "imdb_gpt4_para": 0.7742,
+     "dialogsum_gpt4_para": 0.7407,
+     "repo-ai-english": 0.5652
+    },
+    "human_flagged_by_source": {
+     "pubmed_human": 0.1053,
+     "imdb_human": 0.0,
+     "pubmed_human_para": 0.0,
+     "cnn_human": 0.0588,
+     "dialogsum_human_para": 0.3913,
+     "cnn_human_para": 0.1905,
+     "imdb_human_para": 0.2353,
+     "dialogsum_human": 0.0
+    }
+   }
+  ],
+  "models": {
+   "observer": "Qwen/Qwen2.5-1.5B",
+   "performer": "Qwen/Qwen2.5-1.5B-Instruct",
+   "classifier": "desklib/ai-text-detector-v1.01"
+  }
+ },
+ "zh_classical": {
+  "calibration_report": {
+   "n_human": 236,
+   "n_ai": 80,
+   "auroc": {
+    "fastdetect": 0.8385,
+    "binoculars": 0.8337,
+    "classifier": 0.8352,
+    "fastdetect_norm": 0.8353,
+    "lrr": 0.9447,
+    "log_rank": 0.9412,
+    "entropy": 0.8847,
+    "top10": 0.9324,
+    "lp_burstiness": 0.5492,
+    "style_cv": 0.6056,
+    "style_phrases": 0.5
+   },
+   "features_used": [
+    "fastdetect",
+    "binoculars",
+    "logit_classifier",
+    "fastdetect_norm",
+    "lrr",
+    "log_rank",
+    "entropy",
+    "top10",
+    "lp_burstiness",
+    "style_cv",
+    "style_phrases"
+   ],
+   "cross_validated": true,
+   "combined_auroc": 0.9666,
+   "threshold": 0.6724,
+   "human_flagged_rate": 0.0508,
+   "ai_caught_rate": 0.85,
+   "note": "以上指标用 5 折交叉验证（每次用没参与拟合的样本）算出；样本越多、越接近你要检测的文本，越可信。",
+   "feature_selection": {
+    "全部特征": 0.9666,
+    "三个主信号": 0.8793,
+    "语言模型特征": 0.9443
+   },
+   "feature_set": "全部特征"
+  },
+  "evaluation": [
+   {
+    "name": "文言保留集（另一组古籍 + 未参与校准的 AI 文言）",
+    "n_human": 143,
+    "n_ai": 40,
+    "auroc": 0.9572,
+    "ai_caught": 0.825,
+    "human_flagged": 0.0559,
+    "per_signal_auroc": {
+     "fastdetect": 0.9117,
+     "binoculars": 0.0897,
+     "logit_classifier": 0.718,
+     "fastdetect_norm": 0.9101,
+     "lrr": 0.9608,
+     "log_rank": 0.0497,
+     "entropy": 0.1253,
+     "top10": 0.9465,
+     "lp_burstiness": 0.5881,
+     "style_cv": 0.4753,
+     "style_phrases": 0.5
+    },
+    "ai_caught_by_model": {
+     "llm-classical": 0.825
+    },
+    "human_flagged_by_source": {
+     "入蜀记": 0.0,
+     "唐传奇": 0.0,
+     "困学纪闻": 0.1818,
+     "幽明录": 0.0,
+     "搜神记": 0.0,
+     "新唐书": 0.0,
+     "旧五代史": 0.0909,
+     "明夷待访录": 0.1818,
+     "武林旧事": 0.0,
+     "聊斋志异": 0.0,
+     "西湖梦寻": 0.0909,
+     "资治通鉴": 0.1818,
+     "金史": 0.0,
+     "陶庵梦忆": 0.0
+    }
+   }
+  ],
+  "models": {
+   "observer": "Qwen/Qwen2.5-1.5B",
+   "performer": "Qwen/Qwen2.5-1.5B-Instruct",
+   "classifier": "yuchuantian/AIGC_detector_zhv3"
+  }
+ },
+ "zh_poetry": {
+  "calibration_report": {
+   "n_human": 400,
+   "n_ai": 399,
+   "auroc": {
+    "fastdetect": 0.8189,
+    "binoculars": 0.7997,
+    "classifier": 0.9758,
+    "fastdetect_norm": 0.8073,
+    "lrr": 0.8611,
+    "log_rank": 0.8701,
+    "entropy": 0.8004,
+    "top10": 0.8271,
+    "style_cv": 0.6265,
+    "style_phrases": 0.5
+   },
+   "features_used": [
+    "fastdetect",
+    "binoculars",
+    "logit_classifier",
+    "fastdetect_norm",
+    "lrr",
+    "log_rank",
+    "entropy",
+    "top10",
+    "style_cv",
+    "style_phrases",
+    "logit_classifier_mpu"
+   ],
+   "cross_validated": true,
+   "combined_auroc": 0.9776,
+   "threshold": 0.7865,
+   "human_flagged_rate": 0.0325,
+   "ai_caught_rate": 0.8722,
+   "note": "以上指标用 5 折交叉验证（每次用没参与拟合的样本）算出；样本越多、越接近你要检测的文本，越可信。",
+   "feature_selection": {
+    "诗词分类器 + 语言模型": 0.0683,
+    "诗词分类器 + 通用分类器 + 语言模型": 0.0749,
+    "通用分类器 + 语言模型": 0.019,
+    "只用语言模型": 0.0109
+   },
+   "feature_set": "诗词分类器 + 通用分类器 + 语言模型",
+   "variant_table": {
+    "诗词分类器 + 语言模型": {
+     "ChangAn 保留集": 0.9596,
+     "故事诗 vs 当代人写": 0.7317,
+     "ChangAn AI vs 唐宋名篇": 0.4735,
+     "故事诗 vs 唐宋名篇": 0.0683
+    },
+    "诗词分类器 + 通用分类器 + 语言模型": {
+     "ChangAn 保留集": 0.9581,
+     "故事诗 vs 当代人写": 0.6825,
+     "ChangAn AI vs 唐宋名篇": 0.4526,
+     "故事诗 vs 唐宋名篇": 0.0749
+    },
+    "通用分类器 + 语言模型": {
+     "ChangAn 保留集": 0.9015,
+     "故事诗 vs 当代人写": 0.6828,
+     "ChangAn AI vs 唐宋名篇": 0.0735,
+     "故事诗 vs 唐宋名篇": 0.019
+    },
+    "只用语言模型": {
+     "ChangAn 保留集": 0.8665,
+     "故事诗 vs 当代人写": 0.7508,
+     "ChangAn AI vs 唐宋名篇": 0.0315,
+     "故事诗 vs 唐宋名篇": 0.0109
+    }
+   },
+   "reference_only": true
+  },
+  "evaluation": [
+   {
+    "name": "ChangAn 保留集（另一批作者 + 没见过的 Kimi-K2 与其他模型的新诗词）",
+    "n_human": 300,
+    "n_ai": 300,
+    "auroc": 0.9581,
+    "ai_caught": 0.76,
+    "human_flagged": 0.0233,
+    "per_signal_auroc": {
+     "fastdetect": 0.7767,
+     "binoculars": 0.2338,
+     "logit_classifier": 0.9532,
+     "fastdetect_norm": 0.7742,
+     "lrr": 0.8432,
+     "log_rank": 0.1452,
+     "entropy": 0.2052,
+     "top10": 0.7993,
+     "lp_burstiness": 0.5925,
+     "style_cv": 0.4707,
+     "style_phrases": 0.5
+    },
+    "ai_caught_by_model": {
+     "Deepseek": 0.6933,
+     "gpt-4.1": 0.8667,
+     "kimi-k2": 0.7067,
+     "seed": 0.7733
+    },
+    "human_flagged_by_source": {
+     "human": 0.0233
+    }
+   },
+   {
+    "name": "复述故事情节的 AI 诗词（本仓库自带，40 首）",
+    "n_human": 0,
+    "n_ai": 40,
+    "auroc": null,
+    "ai_caught": 0.025,
+    "human_flagged": null,
+    "per_signal_auroc": {},
+    "ai_caught_by_model": {
+     "repo-ai-story-poem": 0.025
+    },
+    "human_flagged_by_source": {}
+   },
+   {
+    "name": "唐诗三百首 + 宋词三百首（人写名篇，检查误判）",
+    "n_human": 646,
+    "n_ai": 0,
+    "auroc": null,
+    "ai_caught": null,
+    "human_flagged": 0.6827,
+    "per_signal_auroc": {},
+    "ai_caught_by_model": {},
+    "human_flagged_by_source": {
+     "唐诗三百首": 0.6776,
+     "宋词三百首": 0.6893
+    }
+   }
+  ],
+  "models": {
+   "observer": "Qwen/Qwen2.5-1.5B",
+   "performer": "Qwen/Qwen2.5-1.5B-Instruct",
+   "classifier": "poetry-classifier-v1"
+  }
+ }
+}
