@@ -46,7 +46,8 @@ class LMScorer:
         tok2 = AutoTokenizer.from_pretrained(config.PERFORMER_MODEL)
         if self.tok.get_vocab() != tok2.get_vocab():
             raise RuntimeError("OBSERVER_MODEL 与 PERFORMER_MODEL 的分词器不一致，必须使用同一系列的基础版与对话版模型")
-        kw = dict(torch_dtype=torch.float32, low_cpu_mem_usage=True)
+        dtype = {"bfloat16": torch.bfloat16, "float16": torch.float16}.get(config.LM_DTYPE, torch.float32)
+        kw = dict(torch_dtype=dtype, low_cpu_mem_usage=True)
         log.info("loading observer %s", config.OBSERVER_MODEL)
         self.observer = AutoModelForCausalLM.from_pretrained(config.OBSERVER_MODEL, **kw).eval()
         log.info("loading performer %s", config.PERFORMER_MODEL)

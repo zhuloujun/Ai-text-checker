@@ -44,6 +44,7 @@ ENABLE_CLASSIFIER = _bool("ENABLE_CLASSIFIER", True)
 
 TORCH_THREADS = _int("TORCH_THREADS", os.cpu_count() or 2)
 LM_MAX_TOKENS = _int("LM_MAX_TOKENS", 512)          # 单段送入语言模型的最大 token 数
+LM_DTYPE = os.getenv("LM_DTYPE", "float32")          # float32（默认）/ bfloat16：大模型省一半内存
 CLS_MAX_TOKENS = _int("CLS_MAX_TOKENS", 512)
 
 # ---------- 分段 ----------
