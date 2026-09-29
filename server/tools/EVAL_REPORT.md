@@ -41,14 +41,14 @@
 
 ## 文言
 - 数据：NiuTrans 古文语料（人写）+ 大语言模型生成的文言样本
-- 校准集 236 人写 / 80 AI；阈值 0.7286；交叉验证 AUROC 0.9395；特征 fastdetect, binoculars, logit_classifier, fastdetect_norm, lrr, log_rank, entropy, top10, lp_burstiness, style_cv, style_phrases
-- 特征组合比较（校准集交叉验证 AUROC）：全部特征 0.9395，三个主信号 0.9144，语言模型特征 0.913 → 选用全部特征
-- **文言保留集（另一组古籍 + 未参与校准的 AI 文言）**（40 AI / 143 人写）：AUROC 0.9666；检出率 75.0%；误判率 2.1%
-  - 各来源检出率：llm-classical 75%
-  - 各来源误判率：入蜀记 0%，唐传奇 0%，困学纪闻 9%，幽明录 0%，搜神记 0%，新唐书 0%，旧五代史 0%，明夷待访录 0%，武林旧事 0%，聊斋志异 0%，西湖梦寻 18%，资治通鉴 0%，金史 0%，陶庵梦忆 0%
-  - 各特征 AUROC：fastdetect 0.9161，binoculars 0.0794，logit_classifier 0.7224，fastdetect_norm 0.9129，lrr 0.9453，log_rank 0.0455，entropy 0.1058，top10 0.9373，lp_burstiness 0.5537，style_cv 0.4795，style_phrases 0.5
-- **国产新模型 AI 文言故事（DeepSeek / Kimi / 文心一言，用户提供，不参与校准）**（50 AI / 0 人写）：AUROC None；检出率 8.0%
-  - 各来源检出率：repo-ai-deepseek 0%，repo-ai-kimi 0%，repo-ai-wenxin 40%
+- 校准集 236 人写 / 80 AI；阈值 0.6142；交叉验证 AUROC 0.944；特征 fastdetect, binoculars, logit_classifier, fastdetect_norm, lrr, log_rank, entropy, top10, lp_burstiness, style_cv, style_phrases
+- 特征组合比较（校准集交叉验证 AUROC）：全部特征 0.944，三个主信号 0.9253，语言模型特征 0.9186 → 选用全部特征
+- **文言保留集（另一组古籍 + 未参与校准的 AI 文言）**（40 AI / 143 人写）：AUROC 0.9561；检出率 85.0%；误判率 9.1%
+  - 各来源检出率：llm-classical 85%
+  - 各来源误判率：入蜀记 17%，唐传奇 0%，困学纪闻 27%，幽明录 0%，搜神记 9%，新唐书 9%，旧五代史 27%，明夷待访录 0%，武林旧事 0%，聊斋志异 9%，西湖梦寻 18%，资治通鉴 9%，金史 0%，陶庵梦忆 0%
+  - 各特征 AUROC：fastdetect 0.8934，binoculars 0.1028，logit_classifier 0.7397，fastdetect_norm 0.8892，lrr 0.9318，log_rank 0.0675，entropy 0.1315，top10 0.914，lp_burstiness 0.5708，style_cv 0.4562，style_phrases 0.4965
+- **国产新模型 AI 文言故事（DeepSeek / Kimi / 文心一言，用户提供，不参与校准）**（50 AI / 0 人写）：AUROC None；检出率 12.0%
+  - 各来源检出率：repo-ai-deepseek 0%，repo-ai-kimi 0%，repo-ai-wenxin 60%
   - 各特征 AUROC：
 
 ## 诗词
