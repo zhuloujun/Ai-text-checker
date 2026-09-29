@@ -331,7 +331,8 @@ def test_detect_sync(client):
     assert j["status"] == "done"
     s = j["result"]["summary"]
     assert s["methods"] == {"fastdetect": True, "binoculars": True, "classifier": True, "classifier_en": True,
-                            "classifier_poetry": True}
+                            "classifier_poetry": True,
+                            "classifier_classical": bool(os.environ.get("CLASSICAL_CLASSIFIER_MODEL"))}
     assert 0 <= s["ai_rate"] <= 1 and s["counted_chars"] > 0
     seg = j["result"]["segments"][0]
     assert set(seg["raw"]) >= {"fastdetect", "binoculars", "classifier", "ppl", "lrr", "log_rank", "entropy", "top10", "style_cv"}
@@ -600,3 +601,11 @@ def test_calibrate_trusts_labeled_register(client, monkeypatch):
     assert j["status"] == "done", j
     assert j["result"]["report"]["user_ai"] == 1
     assert j["result"]["calibration"]["profile"] == "zh_poetry"
+
+
+@pytest.mark.skipif(not os.environ.get("CLASSICAL_CLASSIFIER_MODEL"), reason="未配置文言分类器")
+def test_classical_uses_classical_classifier_and_mpu_second_opinion(client):
+    h = {"Authorization": "Bearer " + issue(client)}
+    res = client.post("/v1/detect", json={"text": CLASSICAL * 3}, headers=h).json()["result"]
+    seg = [s for s in res["segments"] if s["register"] == "zh_classical"][0]
+    assert "classifier" in seg["raw"] and "classifier_mpu" in seg["raw"]

@@ -366,8 +366,9 @@ def stage_score(args):
     engine = Engine()
     engine.load_all()
     st = engine.status()
-    need = {"en": st["classifier_en"], "zh_poetry": st.get("classifier_poetry") or {}}.get(prof, st["classifier"])
-    if prof == "zh_poetry" and not need.get("enabled"):
+    need = {"en": st["classifier_en"], "zh_poetry": st.get("classifier_poetry") or {},
+            "zh_classical": st.get("classifier_classical") or {}}.get(prof, st["classifier"])
+    if prof in ("zh_poetry", "zh_classical") and not need.get("enabled"):
         need = st["classifier"]
     if not (st["lm"].get("ready") and need.get("ready")):
         raise SystemExit(f"模型没有全部加载成功，停止打分：{json.dumps(st, ensure_ascii=False)}")
@@ -456,8 +457,12 @@ def fit_profile(prof, parts, target_fpr):
     else:
         # 在校准集上用 5 折交叉验证比较几组特征，选区分能力最好的（不看评估集，避免"偷看答案"）
         tried = {}
-        for name, feats in (("全部特征", scoring.EXTENDED_FEATURES), ("三个主信号", scoring.BASE_FEATURES),
-                            ("语言模型特征", [f for f in scoring.EXTENDED_FEATURES if f != "logit_classifier"])):
+        variants = [("全部特征", scoring.EXTENDED_FEATURES), ("三个主信号", scoring.BASE_FEATURES),
+                    ("语言模型特征", [f for f in scoring.EXTENDED_FEATURES if f != "logit_classifier"])]
+        if all(scoring.feature_value(r, "logit_classifier_mpu") is not None for r in hs[:20]):
+            # 有专用分类器（如文言分类器）时，通用中文分类器作为第二意见一起参与比较
+            variants.append(("全部特征 + 通用分类器", scoring.EXTENDED_FEATURES + ["logit_classifier_mpu"]))
+        for name, feats in variants:
             tried[name] = scoring.calibrate(hs, as_, target_fpr, features=feats)
         au = {k: (v["report"].get("combined_auroc") or 0) for k, v in tried.items()}
         best = "全部特征"

@@ -16,6 +16,7 @@ on:
       - "server/tools/data/**"
       - "!server/tools/train_poetry.py"
       - "!server/tools/train_classical.py"
+      - "!server/tools/train_poetry2.py"
       - "!server/tools/compare_experiment.py"
       - ".github/workflows/evaluate.yml"
   workflow_dispatch:
@@ -121,6 +122,15 @@ jobs:
           PY
           )
           ls 古文原文 | head -40
+      - name: 下载文言分类器（本仓库 Release；还没训练出来时文言沿用通用中文分类器）
+        if: ${{ startsWith(matrix.part, 'cl_') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release download classical-classifier-v1 -p classical-classifier.tar.gz -D /tmp -R "${{ github.repository }}"; then
+            tar xzf /tmp/classical-classifier.tar.gz -C /tmp
+            echo "CLASSICAL_CLASSIFIER_MODEL=/tmp/classical-classifier" >> "$GITHUB_ENV"
+          fi
       - name: 打分
         working-directory: server
         env:
@@ -163,6 +173,11 @@ jobs:
           POETRY_CLASSIFIER_MODEL: /tmp/poetry-classifier
         run: |
           mkdir -p tools/scores && cp /tmp/dl/*.json tools/scores/ && ls -la tools/scores
+          # 文言各份的打分里带有通用分类器第二意见（classifier_mpu）时，说明是用文言分类器打的分
+          if python3 -c "import json,sys; r=json.load(open('tools/scores/cl_cal.json')); sys.exit(0 if r and 'classifier_mpu' in r[0]['s'] else 1)"; then
+            export CLASSICAL_CLASSIFIER_MODEL=/tmp/classical-classifier
+            echo "文言按文言分类器拟合"
+          fi
           python tools/evaluate.py --stage fit --scores-dir tools/scores --target-fpr 0.05
       - name: 把结果提交回仓库
         run: |

@@ -39,6 +39,10 @@ POETRY_CLASSIFIER_URL = os.getenv(
     "POETRY_CLASSIFIER_URL",
     "https://github.com/zhuloujun/ceshi/releases/download/poetry-classifier-v1/poetry-classifier.tar.gz")
 
+# 文言专用分类器（tools/train_classical.py 用古籍人写 vs DeepSeek / Kimi / 文心一言等生成的文言微调，发布在本仓库 Release）。
+CLASSICAL_CLASSIFIER_MODEL = os.getenv("CLASSICAL_CLASSIFIER_MODEL", "")
+CLASSICAL_CLASSIFIER_ID = os.getenv("CLASSICAL_CLASSIFIER_ID", "classical-classifier-v1")
+
 ENABLE_LM = _bool("ENABLE_LM", True)
 ENABLE_CLASSIFIER = _bool("ENABLE_CLASSIFIER", True)
 
@@ -98,6 +102,8 @@ def classifier_for(register: str) -> str:
         return EN_CLASSIFIER_MODEL
     if register == "zh_poetry" and POETRY_CLASSIFIER_MODEL:
         return POETRY_CLASSIFIER_ID
+    if register == "zh_classical" and CLASSICAL_CLASSIFIER_MODEL:
+        return CLASSICAL_CLASSIFIER_ID
     return CLASSIFIER_MODEL
 
 

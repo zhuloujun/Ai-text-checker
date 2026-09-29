@@ -20,6 +20,10 @@ EN_CLASSIFIER_MODEL = "desklib/ai-text-detector-v1.01"   # 英文分类器（DeB
 POETRY_LOCAL = Path(__file__).resolve().parent / "poetry-classifier"
 POETRY_DIR = "/models/poetry-classifier"
 HAS_POETRY = (POETRY_LOCAL / "config.json").exists()
+# 文言专用分类器（tools/train_classical.py 训练，Release classical-classifier-v1）：部署工作流按需下载到 server/classical-classifier
+CLASSICAL_LOCAL = Path(__file__).resolve().parent / "classical-classifier"
+CLASSICAL_DIR = "/models/classical-classifier"
+HAS_CLASSICAL = (CLASSICAL_LOCAL / "config.json").exists()
 CPU_CORES = 8
 
 image = (
@@ -35,6 +39,7 @@ image = (
         "CLASSIFIER_MODEL": CLASSIFIER_MODEL,
         "EN_CLASSIFIER_MODEL": EN_CLASSIFIER_MODEL,
         "POETRY_CLASSIFIER_MODEL": POETRY_DIR if HAS_POETRY else "",
+        "CLASSICAL_CLASSIFIER_MODEL": CLASSICAL_DIR if HAS_CLASSICAL else "",
         "USER_CALIBRATION_FILE": "/data/user_calibration.json",
         "CALIBRATION_VOLUME": "ai-text-checker-data",
     })
@@ -46,6 +51,8 @@ image = (
 )
 if HAS_POETRY:
     image = image.add_local_dir(str(POETRY_LOCAL), POETRY_DIR)
+if HAS_CLASSICAL:
+    image = image.add_local_dir(str(CLASSICAL_LOCAL), CLASSICAL_DIR)
 
 app = modal.App("ai-text-checker")
 # 持久卷：保存管理页“用我的标注校准”的结果，服务重启 / 重新部署后仍然有效
