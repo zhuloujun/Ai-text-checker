@@ -382,7 +382,6 @@
     "log_rank": 0.8516,
     "entropy": 0.7341,
     "top10": 0.8071,
-    "lp_burstiness": 0.5972,
     "style_cv": 0.6265,
     "style_phrases": 0.5
    },
@@ -405,11 +404,39 @@
    "ai_caught_rate": 0.8346,
    "note": "以上指标用 5 折交叉验证（每次用没参与拟合的样本）算出；样本越多、越接近你要检测的文本，越可信。",
    "feature_selection": {
-    "全部特征": 0.9755,
-    "三个主信号": 0.9737,
-    "语言模型特征": 0.8738
+    "诗词分类器 + 语言模型": 0.284,
+    "诗词分类器 + 通用分类器 + 语言模型": 0.2678,
+    "通用分类器 + 语言模型": 0.1325,
+    "只用语言模型": 0.1128
    },
-   "feature_set": "全部特征"
+   "feature_set": "诗词分类器 + 语言模型",
+   "variant_table": {
+    "诗词分类器 + 语言模型": {
+     "ChangAn 保留集": 0.9545,
+     "故事诗 vs 当代人写": 0.6749,
+     "ChangAn AI vs 唐宋名篇": 0.8112,
+     "故事诗 vs 唐宋名篇": 0.284
+    },
+    "诗词分类器 + 通用分类器 + 语言模型": {
+     "ChangAn 保留集": 0.9536,
+     "故事诗 vs 当代人写": 0.6343,
+     "ChangAn AI vs 唐宋名篇": 0.78,
+     "故事诗 vs 唐宋名篇": 0.2678
+    },
+    "通用分类器 + 语言模型": {
+     "ChangAn 保留集": 0.8769,
+     "故事诗 vs 当代人写": 0.5923,
+     "ChangAn AI vs 唐宋名篇": 0.3359,
+     "故事诗 vs 唐宋名篇": 0.1325
+    },
+    "只用语言模型": {
+     "ChangAn 保留集": 0.8379,
+     "故事诗 vs 当代人写": 0.6759,
+     "ChangAn AI vs 唐宋名篇": 0.2267,
+     "故事诗 vs 唐宋名篇": 0.1128
+    }
+   },
+   "reference_only": true
   },
   "evaluation": [
    {
@@ -440,6 +467,33 @@
     },
     "human_flagged_by_source": {
      "human": 0.0233
+    }
+   },
+   {
+    "name": "复述故事情节的 AI 诗词（本仓库自带，40 首）",
+    "n_human": 0,
+    "n_ai": 40,
+    "auroc": null,
+    "ai_caught": 0.0,
+    "human_flagged": null,
+    "per_signal_auroc": {},
+    "ai_caught_by_model": {
+     "repo-ai-story-poem": 0.0
+    },
+    "human_flagged_by_source": {}
+   },
+   {
+    "name": "唐诗三百首 + 宋词三百首（人写名篇，检查误判）",
+    "n_human": 646,
+    "n_ai": 0,
+    "auroc": null,
+    "ai_caught": null,
+    "human_flagged": 0.1858,
+    "per_signal_auroc": {},
+    "ai_caught_by_model": {},
+    "human_flagged_by_source": {
+     "唐诗三百首": 0.2322,
+     "宋词三百首": 0.125
     }
    }
   ],
