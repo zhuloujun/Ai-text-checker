@@ -52,7 +52,9 @@ PART_PROFILE = {
     "po_cal": "zh_poetry", "po_test": "zh_poetry", "po_story": "zh_poetry", "po_classic": "zh_poetry",
     "en_cal1": "en", "en_cal2": "en", "en_ood": "en", "en_para": "en",
     "cl_cal": "zh_classical", "cl_test": "zh_classical",
-    # 用户提供的国产新模型（DeepSeek / Kimi / 文心一言）AI 样本：每个模型 2/3 参与校准、1/3 留作评估
+    # 用户提供的国产新模型（DeepSeek / Kimi / 文心一言）AI 样本：只作评估，不参与校准。
+    # 2026-09 的实验表明，把它们加入逻辑回归校准不能把它们与人写分开（检出率仍只有约 6%），反而拉低原有评估集的效果；
+    # 它们只用于训练专门的分类器（tools/train_classical.py，按同样的 fit / test 划分，评估部分从不参与训练）。
     "cl_user": "zh_classical", "po_user": "zh_poetry", "en_user": "en",
 }
 USER_MODELS = {"deepseek": "DeepSeek", "kimi": "Kimi", "wenxin": "文心一言"}
@@ -64,15 +66,15 @@ PROFILE_PARTS = {
     # 短段（不足 200 字）的信号分布与长段不同，单独校准、单独定阈值，否则短的人写段落误判偏多
     "zh_short": {"fit": ["cal1s", "cal2s"],
                  "eval": [("tests", "NLPCC 测试集截成 80–260 字的短段（含本仓库 AI 读后感 / 散文）")]},
-    "zh_poetry": {"fit": ["po_cal", "po_user_fit"], "eval": [("po_user_test", "国产新模型 AI 诗词（DeepSeek / Kimi / 文心一言，未参与校准的 1/3）"),
+    "zh_poetry": {"fit": ["po_cal"], "eval": [("po_user", "国产新模型 AI 诗词（DeepSeek / Kimi / 文心一言，用户提供，不参与校准）"),
                                               ("po_test", "ChangAn 保留集（另一批作者 + 没见过的 Kimi-K2 与其他模型的新诗词）"),
                                               ("po_story", "复述故事情节的 AI 诗词（本仓库自带，40 首）"),
                                               ("po_classic", "唐诗三百首 + 宋词三百首（人写名篇，检查误判）")]},
-    "en": {"fit": ["en_cal1", "en_cal2", "en_user_fit"], "eval": [("en_user_test", "国产新模型 AI 英文短篇（DeepSeek / Kimi / 文心一言，未参与校准的 1/3）"),
+    "en": {"fit": ["en_cal1", "en_cal2"], "eval": [("en_user", "国产新模型 AI 英文短篇（DeepSeek / Kimi / 文心一言，用户提供，不参与校准）"),
                                                   ("en_ood", "MAGE：GPT-4 在未见过的领域生成的文本"),
                                                   ("en_para", "MAGE：GPT-4 文本经改写后（含本仓库英文 AI 样本）")]},
-    "zh_classical": {"fit": ["cl_cal", "cl_user_fit"], "eval": [("cl_test", "文言保留集（另一组古籍 + 未参与校准的 AI 文言）"),
-                                                                ("cl_user_test", "国产新模型 AI 文言故事（DeepSeek / Kimi / 文心一言，未参与校准的 1/3）")]},
+    "zh_classical": {"fit": ["cl_cal"], "eval": [("cl_test", "文言保留集（另一组古籍 + 未参与校准的 AI 文言）"),
+                                                                ("cl_user", "国产新模型 AI 文言故事（DeepSeek / Kimi / 文心一言，用户提供，不参与校准）")]},
 }
 PROFILE_SOURCE = {
     "zh": "NLPCC 2025 Task 1（CSL 学术摘要 / 新闻 / 作文；GPT-4o、GLM-4、Qwen）",
@@ -498,7 +500,7 @@ def fit_poetry(parts, target_fpr, hs, as_):
         "ChangAn AI vs 唐宋名篇": ([r for r in test if r["y"] == 1], classic),
         "故事诗 vs 唐宋名篇": (story, classic),
     }
-    user_test = parts.get("po_user_test", [])
+    user_test = parts.get("po_user", [])
     if user_test:
         comparisons["国产新模型诗 vs 当代人写"] = (user_test, [r for r in test if r["y"] == 0])
         comparisons["国产新模型诗 vs 唐宋名篇"] = (user_test, classic)

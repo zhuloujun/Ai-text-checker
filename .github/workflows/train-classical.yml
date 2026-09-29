@@ -1,0 +1,74 @@
+# 训练"文言专用"AI 检测分类器，并把模型发布到本仓库的 Release（classical-classifier-v1）。
+# 触发：修改 server/tools/train_classical.py 或 AI 文言样本（server/tools/data/ai_*classical*）并推送，或在 Actions 页面手动运行。
+name: 训练文言检测模型
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "server/tools/train_classical.py"
+      - "server/tools/data/ai_classical_*.txt"
+      - "server/tools/data/ai_user_classical_*.txt"
+      - ".github/workflows/train-classical.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: train-classical
+  cancel-in-progress: true
+
+env:
+  RELEASE_TAG: classical-classifier-v1
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: server/requirements.txt
+      - name: 安装依赖
+        run: |
+          pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install -r server/requirements.txt openpyxl
+      - name: 缓存底座模型
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-chinese-roberta-wwm-ext
+      - name: 下载底座模型与古籍语料（只取用到的书）
+        run: |
+          python server/download_models.py hfl/chinese-roberta-wwm-ext
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/NiuTrans/Classical-Modern /tmp/classical
+          cd /tmp/classical
+          git sparse-checkout set --no-cone $(cd "${{ github.workspace }}/server/tools" && python3 - <<'PY'
+          from train_classical import TRAIN_BOOKS
+          from evaluate import CLASSICAL_TEST_BOOKS
+          print(" ".join(f"/古文原文/{b}/" for b in TRAIN_BOOKS + CLASSICAL_TEST_BOOKS))
+          PY
+          )
+          ls 古文原文 | wc -l
+      - name: 训练（约 1–3 小时）
+        env:
+          TORCH_THREADS: "4"
+          TOKENIZERS_PARALLELISM: "false"
+        run: |
+          python -u server/tools/train_classical.py --classical-dir /tmp/classical --out /tmp/classical-classifier \
+            --epochs 4 --time-budget-min 270
+      - name: 发布到 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat /tmp/classical-classifier/training_result.json >> "$GITHUB_STEP_SUMMARY"
+          tar czf classical-classifier.tar.gz -C /tmp classical-classifier
+          ls -la classical-classifier.tar.gz
+          gh release view "$RELEASE_TAG" >/dev/null 2>&1 || \
+            gh release create "$RELEASE_TAG" --title "文言 AI 检测模型" \
+              --notes "由 server/tools/train_classical.py 微调 hfl/chinese-roberta-wwm-ext 得到（古籍人写 vs DeepSeek / Kimi / 文心一言等模型生成的文言）。"
+          gh release upload "$RELEASE_TAG" classical-classifier.tar.gz --clobber
