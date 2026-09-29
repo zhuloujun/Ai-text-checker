@@ -511,3 +511,15 @@ def test_calibrate_with_user_labels_merged_with_builtin(client, monkeypatch):
     assert rep["builtin_samples"] == 160 and rep["user_ai"] >= 1 and rep["user_human"] == 0
     assert "user_samples" in rep and rep["user_samples"]["n_ai"] >= 1
     assert j["result"]["calibration"]["profile"] == "en"
+
+
+def test_default_calibration_profiles_name_the_deployed_models():
+    """内置校准里每种文体记录的分类器必须与线上实际使用的一致，否则会被静默丢弃。"""
+    import json
+    from app import config
+    cal = json.loads((Path(__file__).resolve().parent.parent / "app" / "default_calibration.json").read_text("utf-8"))
+    expect = {"en": "desklib/ai-text-detector-v1.01", "zh_poetry": config.POETRY_CLASSIFIER_ID,
+              "zh_classical": "yuchuantian/AIGC_detector_zhv3", "zh_short": "yuchuantian/AIGC_detector_zhv3"}
+    for prof, model in expect.items():
+        if prof in cal.get("profiles", {}):
+            assert cal["profiles"][prof]["models"]["classifier"] == model, prof

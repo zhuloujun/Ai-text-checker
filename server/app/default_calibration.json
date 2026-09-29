@@ -407,7 +407,7 @@
    "models": {
     "observer": "Qwen/Qwen2.5-0.5B",
     "performer": "Qwen/Qwen2.5-0.5B-Instruct",
-    "classifier": "yuchuantian/AIGC_detector_zhv3"
+    "classifier": "poetry-classifier-v1"
    },
    "source": "ChangAn 当代旧体诗词（人写）+ DeepSeek / 豆包 / GPT-4.1 生成诗词；诗词专用分类器（ChangAn 训练集微调）",
    "profile": "zh_poetry"
