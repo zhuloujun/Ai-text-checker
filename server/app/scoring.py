@@ -58,6 +58,9 @@ def feature_value(scores: dict, name: str):
     if name == "logit_classifier":
         cl = scores.get("classifier")
         return None if cl is None else _logit(cl)
+    if name == "logit_classifier_mpu":
+        cl = scores.get("classifier_mpu")
+        return None if cl is None else _logit(cl)
     v = scores.get(name)
     return None if v is None else float(v)
 

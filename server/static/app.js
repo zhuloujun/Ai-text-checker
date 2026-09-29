@@ -350,6 +350,7 @@ function renderResult(res){
     ].filter(Boolean).join(' · ');
     const kindTag = seg.kind === 'reference' ? '<span class="para-tag">参考文献 · 不计入</span>'
       : seg.kind === 'quotation' ? `<span class="para-tag">引文为主 · 不计入（${escapeHtml(seg.notes.join('；'))}）${seg.ref_prob!=null ? ' · 参考值 '+pct(seg.ref_prob) : ''}</span>`
+      : seg.kind === 'reference_only' ? `<span class="para-tag">仅供参考 · 不计入${seg.ref_prob!=null ? ' · 参考值 '+pct(seg.ref_prob) : ''}</span>`
       : (seg.notes && seg.notes.length) ? `<span class="para-tag">${escapeHtml(seg.notes.join('；'))}</span>` : '';
     div.innerHTML = `
       <div class="para-badge" ${seg.prob==null && seg.ref_prob!=null ? 'title="参考值：该段不计入 AI 率" style="opacity:.55;border-style:dashed"' : ''}>${seg.prob!=null ? Math.round(seg.prob*100) : seg.ref_prob!=null ? Math.round(seg.ref_prob*100) : '—'}</div>
@@ -358,6 +359,8 @@ function renderResult(res){
         <div class="para-tags">
           ${seg.label ? `<span class="para-tag strong">${seg.label}</span>` : ''}
           ${seg.near_threshold ? '<span class="para-tag" title="低于判定阈值，但相差不大，未计入 AI 率">接近阈值</span>' : ''}
+          ${seg.memorized ? '<span class="para-tag" title="语言模型几乎能逐字复现、而分类器判为人写：多半是公开名篇，已不采信语言模型信号">疑似名篇原文</span>' : ''}
+          ${seg.short ? '<span class="para-tag" title="篇幅短，结果波动较大">篇幅短</span>' : ''}
           ${kindTag}${sig}
           <span class="para-tag">第 ${seg.index+1} 段 · ${REG_NAME[seg.register] || '现代汉语'} · ${seg.chars} 字</span>
         </div>
@@ -389,7 +392,7 @@ exportBtn.addEventListener('click', ()=>{
   out += `\n【说明】任何 AI 检测都有误判，本报告只供作者自查，不能作为学术不端判定依据。\n`;
   out += `\n${'='.repeat(60)}\n分段结果\n${'='.repeat(60)}\n`;
   lastResult.segments.forEach(seg=>{
-    const tag = seg.kind === 'reference' ? '参考文献，不计入' : seg.kind === 'quotation' ? '引文为主，不计入' : (seg.label || (seg.near_threshold ? '接近阈值（未计入）' : '未达阈值'));
+ const tag = seg.kind === 'reference' ? '参考文献，不计入' : seg.kind === 'quotation' ? '引文为主，不计入' : seg.kind === 'reference_only' ? '仅供参考，不计入' : (seg.label || (seg.near_threshold ? '接近阈值（未计入）' : '未达阈值'));
     const probStr = seg.prob!=null ? pct(seg.prob) : seg.ref_prob!=null ? `${pct(seg.ref_prob)}（参考值，不计入）` : '—';
     out += `\n[第 ${seg.index+1} 段 | ${REG_NAME[seg.register] || '现代汉语'} | AI 概率 ${probStr} | ${tag} | ${seg.chars} 字]\n`;
     const sg = seg.signals || {}, r = seg.raw || {};
@@ -402,7 +405,9 @@ exportBtn.addEventListener('click', ()=>{
       r.top10!=null ? `前10名占比 ${pct(r.top10)}` : '',
       r.lp_burstiness!=null ? `困惑度波动 ${r.lp_burstiness.toFixed(3)}` : '',
       seg.style ? `句长变异 ${seg.style.sentence_len_cv}` : '',
-      (seg.notes && seg.notes.length) ? `备注：${seg.notes.join('；')}` : ''
+      (seg.notes && seg.notes.length) ? `备注：${seg.notes.join('；')}` : '',
+      seg.memorized ? '疑似名篇原文（不采信语言模型信号）' : '',
+      seg.short ? '篇幅短' : ''
     ].filter(Boolean).join(' · ');
     if(bits) out += `指标：${bits}\n`;
     out += `${seg.text}\n`;

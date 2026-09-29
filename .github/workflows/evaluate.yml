@@ -40,7 +40,7 @@ env:
   N_CL_HUMAN_TEST: "160"
   N_PO_CAL: "800"
   N_PO_TEST: "600"
-  PUSH_PARTS: '["po_cal","po_test"]'
+  PUSH_PARTS: '["po_cal","po_test","po_story","po_classic"]'
 
 jobs:
   plan:
@@ -51,7 +51,7 @@ jobs:
       - id: p
         run: |
           if [ "${{ github.event.inputs.include_zh }}" = "true" ]; then
-            echo 'parts=["cal1","cal2","test","csl","cal1s","cal2s","tests","en_cal1","en_cal2","en_ood","en_para","cl_cal","cl_test","po_cal","po_test"]' >> "$GITHUB_OUTPUT"
+            echo 'parts=["cal1","cal2","test","csl","cal1s","cal2s","tests","en_cal1","en_cal2","en_ood","en_para","cl_cal","cl_test","po_cal","po_test","po_story","po_classic"]' >> "$GITHUB_OUTPUT"
           else
             echo "parts=$PUSH_PARTS" >> "$GITHUB_OUTPUT"
           fi
@@ -75,7 +75,7 @@ jobs:
       - name: 安装依赖
         run: |
           pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cpu
-          pip install -r server/requirements.txt openpyxl
+          pip install -r server/requirements.txt openpyxl opencc-python-reimplemented
       - name: 缓存模型
         uses: actions/cache@v4
         with:
@@ -101,6 +101,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           git clone --depth 1 https://github.com/VelikayaScarlet/ChangAn /tmp/changan
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/chinese-poetry/chinese-poetry /tmp/cpoetry
+          (cd /tmp/cpoetry && git sparse-checkout set --no-cone "/全唐诗/唐诗三百首.json" "/宋词/宋词三百首.json")
           gh release download poetry-classifier-v1 -p poetry-classifier.tar.gz -D /tmp -R "${{ github.repository }}"
           tar xzf /tmp/poetry-classifier.tar.gz -C /tmp
           ls /tmp/poetry-classifier
@@ -124,7 +126,7 @@ jobs:
           TOKENIZERS_PARALLELISM: "false"
         run: |
           python tools/evaluate.py --stage score --part ${{ matrix.part }} --data /tmp/nlpcc/data \
-            --mage-dir /tmp/mage --classical-dir /tmp/classical --changan-dir /tmp/changan --scores-dir /tmp/scores \
+            --mage-dir /tmp/mage --classical-dir /tmp/classical --changan-dir /tmp/changan --cpoetry-dir /tmp/cpoetry --scores-dir /tmp/scores \
             --n-cal $N_CAL --n-test $N_TEST --n-csl $N_CSL --n-en-cal $N_EN_CAL --n-en-test $N_EN_TEST \
             --n-cl-human $N_CL_HUMAN --n-cl-human-test $N_CL_HUMAN_TEST --n-po-cal $N_PO_CAL --n-po-test $N_PO_TEST
       - uses: actions/upload-artifact@v4
@@ -143,7 +145,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install numpy openpyxl
+      - run: pip install numpy openpyxl opencc-python-reimplemented
       - uses: actions/download-artifact@v4
         with:
           pattern: scores-*

@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import queue
 import threading
 import time
@@ -24,6 +25,25 @@ def style_scores(text: str, feats: dict | None = None) -> dict:
     f = feats or stylometry.features(text)
     return {"style_cv": f["sentence_len_cv"],
             "style_phrases": len(f["template_phrases"]) / max(len(text), 1) * 1000}
+
+
+LM_KEYS = ("fastdetect", "fastdetect_norm", "binoculars", "ppl", "x_ppl", "log_rank", "lrr", "entropy",
+           "top1", "top10", "lp_burstiness")
+
+
+def memorized(raw: dict) -> bool:
+    """语言模型几乎能逐字复现（困惑度极低），而分类器明确判为人写：多半是模型训练时背熟的公开名篇
+    （莎士比亚、唐诗宋词、经典演讲等）。这时语言模型信号会误把名篇当成 AI，应当不予采信。"""
+    ppl, cls = raw.get("ppl"), raw.get("classifier")
+    return ppl is not None and cls is not None and math.exp(ppl) < config.MEMORIZED_PPL and cls < 0.3
+
+
+def is_short(seg, text: str) -> bool:
+    if seg.register == "zh_poetry":
+        return False
+    if seg.register == "en":
+        return len(text.split()) < config.SHORT_WORDS_EN
+    return len(text) < config.SHORT_CHARS_ZH
 
 
 def score_text(seg) -> str:
@@ -134,6 +154,17 @@ class Engine:
                 out[i] = p
         return out
 
+    def classify_second(self, texts: list[str], registers: list[str]) -> list:
+        """诗词段落再用通用中文分类器（MPU）打一次分，作为第二意见（与诗词分类器互相制衡）。"""
+        out = [None] * len(texts)
+        if not (self.cls_poetry and self.cls and self.cls.ready):
+            return out
+        idx = [i for i, r in enumerate(registers) if r == "zh_poetry"]
+        if idx:
+            for i, p in zip(idx, self.cls.predict([texts[i] for i in idx])):
+                out[i] = p
+        return out
+
     def raw_scores(self, texts: list[str], progress=None, registers: list[str] | None = None) -> list[dict]:
         """对若干段文字算原始分数（校准、评估时也用这个）。"""
         registers = registers or [detect_register(t) for t in texts]
@@ -141,6 +172,9 @@ class Engine:
         for i, p in enumerate(self.classify(texts, registers)):
             if p is not None:
                 out[i]["classifier"] = p
+        for i, p in enumerate(self.classify_second(texts, registers)):
+            if p is not None:
+                out[i]["classifier_mpu"] = p
         if self.lm and self.lm.ready:
             for i, t in enumerate(texts):
                 t0 = time.time()
@@ -169,9 +203,16 @@ class Engine:
                 if s.kind != "body":
                     s.notes = list(s.notes) + ["全文均被判为引文/参考文献，已改为计入"]
                     s.kind = "body"
+        # 某种文体的检测在评估中不够稳定时（目前可能是诗词），该文体只给参考值、不计入 AI 率
+        ref_only_regs = {r for r in ("zh_poetry",)
+                         if (self.cal.get("profiles") or {}).get(r, {}).get("reference_only")}
+        for s in segs:
+            if s.kind == "body" and s.register in ref_only_regs:
+                s.kind = "reference_only"
+                s.notes = list(s.notes) + [f"{REGISTER_NAMES.get(s.register, s.register)}检测不够稳定，结果仅供参考、不计入 AI 率"]
         counted = [s for s in segs if s.counted]
         # 不计入的引文段落也打分，作为"参考值"显示（不影响 AI 率）；参考文献条目没有检测意义，不打分
-        ref_scored = [s for s in segs if s.kind == "quotation"]
+        ref_scored = [s for s in segs if s.kind in ("quotation", "reference_only")]
         lm_targets = counted
         sampled = False
         if mode == "fast" and len(counted) > config.FAST_MODE_MAX_SEGMENTS:
@@ -185,9 +226,13 @@ class Engine:
         results = {s.index: {} for s in segs}
         scored = counted + ref_scored
         # 分类器很快：对所有正文和引文段落都算（按文体选分类器）
-        for s, p in zip(scored, self.classify([score_text(s) for s in scored], [s.register for s in scored])):
+        sc_texts, sc_regs = [score_text(s) for s in scored], [s.register for s in scored]
+        for s, p in zip(scored, self.classify(sc_texts, sc_regs)):
             if p is not None:
                 results[s.index]["classifier"] = p
+        for s, p in zip(scored, self.classify_second(sc_texts, sc_regs)):
+            if p is not None:
+                results[s.index]["classifier_mpu"] = p
         # 语言模型较慢：快速模式下抽样
         if self.lm and self.lm.ready:
             done = 0
@@ -220,7 +265,13 @@ class Engine:
             if reg == "zh" and has_short and len(score_text(s)) < config.SHORT_SEGMENT_CHARS:
                 reg = "zh_short"
             prof[s.index] = scoring.profile_for(cal, reg)
-        combos = {s.index: (scoring.combine(results[s.index], prof[s.index][0]) if s.index in scored_ids
+        memo = {s.index for s in scored if memorized(results[s.index])}
+
+        def for_combine(i):
+            if i in memo:
+                return {k: v for k, v in results[i].items() if k not in LM_KEYS}
+            return results[i]
+        combos = {s.index: (scoring.combine(for_combine(s.index), prof[s.index][0]) if s.index in scored_ids
                             else {"prob": None, "signals": {}})
                   for s in segs}
         # 2) 与相邻正文段落平滑：只在同一篇作品、同一文体的正文段落之间进行（标题行分开的作品互不影响）
@@ -264,6 +315,8 @@ class Engine:
                 "ref_prob": (None if s.counted or comb["prob"] is None else round(comb["prob"], 4)),
                 "prob_unsmoothed": None if comb["prob"] is None else round(comb["prob"], 4),
                 "level": level, "label": label, "near_threshold": near,
+                "memorized": s.index in memo,
+                "short": is_short(s, score_text(s)),
                 "signals": {k: (None if v is None else round(v, 4)) for k, v in comb["signals"].items()},
                 "raw": {k: (round(v, 4) if isinstance(v, float) else v) for k, v in sc.items()},
                 "style": styles.get(s.index),
@@ -294,6 +347,13 @@ class Engine:
                          "请把文言部分的结果当作线索而非结论。")
         if main_reg == "zh" and str(cal.get("source", "")).startswith("NLPCC") and cal.get("calibrated"):
             notes.append("使用的是内置默认校准（公开数据集：学术摘要、新闻、作文）；用你自己的文字在管理页校准后会更贴合你的文风。")
+        if memo:
+            notes.append(f"有 {len(memo)} 段文字语言模型几乎能逐字复现、而分类器判为人写，疑为公开名篇原文"
+                         "（如经典诗文、名人演讲）；这些段落不采信语言模型信号，只按分类器判断。")
+        n_short = sum(1 for s in counted if is_short(s, score_text(s)))
+        if n_short:
+            notes.append(f"有 {n_short} 段篇幅较短（中文不足 {config.SHORT_CHARS_ZH} 字 / 英文不足 {config.SHORT_WORDS_EN} 词），"
+                         "已标“篇幅短”，这些段落的结果波动较大。")
         if near_chars and counted_chars:
             notes.append(f"另有 {near_chars / counted_chars:.0%} 的文字 AI 概率接近阈值（已标“接近阈值”，未计入 AI 率），"
                          "可重点复核；AI 翻译、经过改写或人工润色的 AI 文字常落在这一区间。")

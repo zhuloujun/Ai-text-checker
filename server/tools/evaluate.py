@@ -49,7 +49,7 @@ DATA_DIR = ROOT / "tools" / "data"
 PART_PROFILE = {
     "cal1": "zh", "cal2": "zh", "test": "zh", "csl": "zh",
     "cal1s": "zh", "cal2s": "zh", "tests": "zh",
-    "po_cal": "zh_poetry", "po_test": "zh_poetry",
+    "po_cal": "zh_poetry", "po_test": "zh_poetry", "po_story": "zh_poetry", "po_classic": "zh_poetry",
     "en_cal1": "en", "en_cal2": "en", "en_ood": "en", "en_para": "en",
     "cl_cal": "zh_classical", "cl_test": "zh_classical",
 }
@@ -60,7 +60,9 @@ PROFILE_PARTS = {
     # 短段（不足 200 字）的信号分布与长段不同，单独校准、单独定阈值，否则短的人写段落误判偏多
     "zh_short": {"fit": ["cal1s", "cal2s"],
                  "eval": [("tests", "NLPCC 测试集截成 80–260 字的短段（含本仓库 AI 读后感 / 散文）")]},
-    "zh_poetry": {"fit": ["po_cal"], "eval": [("po_test", "ChangAn 保留集（另一批作者 + 没见过的 Kimi-K2 与其他模型的新诗词）")]},
+    "zh_poetry": {"fit": ["po_cal"], "eval": [("po_test", "ChangAn 保留集（另一批作者 + 没见过的 Kimi-K2 与其他模型的新诗词）"),
+                                              ("po_story", "复述故事情节的 AI 诗词（本仓库自带，40 首）"),
+                                              ("po_classic", "唐诗三百首 + 宋词三百首（人写名篇，检查误判）")]},
     "en": {"fit": ["en_cal1", "en_cal2"], "eval": [("en_ood", "MAGE：GPT-4 在未见过的领域生成的文本"),
                                                   ("en_para", "MAGE：GPT-4 文本经改写后（含本仓库英文 AI 样本）")]},
     "zh_classical": {"fit": ["cl_cal"], "eval": [("cl_test", "文言保留集（另一组古籍 + 未参与校准的 AI 文言）")]},
@@ -201,6 +203,18 @@ def poetry_parts(args):
     return {"po_cal": po_cal, "po_test": po_test}
 
 
+def poetry_extra_parts(args):
+    story = [{"text": t, "y": 1, "model": "repo-ai-story-poem"} for t in read_blocks(DATA_DIR / "ai_poems_story.txt")]
+    from opencc import OpenCC
+    cc = OpenCC("t2s")
+    d = Path(args.cpoetry_dir)
+    tang = [cc.convert("\n".join(p["paragraphs"])) for p in json.loads((d / "全唐诗" / "唐诗三百首.json").read_text("utf-8"))]
+    song = ["\n".join(p["paragraphs"]) for p in json.loads((d / "宋词" / "宋词三百首.json").read_text("utf-8"))]
+    classic = ([{"text": t, "y": 0, "model": "唐诗三百首"} for t in tang if len(t) >= 16]
+               + [{"text": t, "y": 0, "model": "宋词三百首"} for t in song if len(t) >= 16])
+    return {"po_story": story, "po_classic": classic}
+
+
 def read_mage(path):
     csv.field_size_limit(10 ** 8)
     rows, header, n_raw = [], None, 0
@@ -303,6 +317,8 @@ def build_part(args, part):
     prof = PART_PROFILE[part]
     if part in ("cal1s", "cal2s", "tests"):
         return zh_short_parts(args)[part]
+    if part in ("po_story", "po_classic"):
+        return poetry_extra_parts(args)[part]
     if prof == "zh_poetry":
         return poetry_parts(args)[part]
     if prof == "zh":
@@ -402,6 +418,8 @@ def fit_profile(prof, parts, target_fpr):
     if len(hs) < 10 or len(as_) < 10:
         return None
     fixed = scoring.PROFILE_FEATURES.get(prof)
+    if prof == "zh_poetry":
+        return fit_poetry(parts, target_fpr, hs, as_)
     if fixed:
         res = scoring.calibrate(hs, as_, target_fpr, features=fixed)
     else:
@@ -425,6 +443,62 @@ def fit_profile(prof, parts, target_fpr):
     cal["note"] = (f"内置默认校准（{scoring.PROFILE_NAMES[prof]}）：用公开数据 {len(hs)} 段人写、{len(as_)} 段 AI 文本拟合；"
                    "建议再用你自己的文字校准。")
     ev = [evaluate_rows(parts[p], cal, name) for p, name in spec["eval"] if parts.get(p)]
+    return {"calibration": cal, "report": res["report"], "evaluation": ev}
+
+
+POETRY_VARIANTS = {
+    "诗词分类器 + 语言模型": [f for f in scoring.EXTENDED_FEATURES if f != "lp_burstiness"],
+    "诗词分类器 + 通用分类器 + 语言模型": [f for f in scoring.EXTENDED_FEATURES if f != "lp_burstiness"] + ["logit_classifier_mpu"],
+    "通用分类器 + 语言模型": [f for f in scoring.EXTENDED_FEATURES if f not in ("lp_burstiness", "logit_classifier")] + ["logit_classifier_mpu"],
+    "只用语言模型": [f for f in scoring.EXTENDED_FEATURES if f not in ("lp_burstiness", "logit_classifier")],
+}
+# 诗词的最差情况 AUROC 低于这个值时，诗词结果只作参考、不计入 AI 率
+POETRY_COUNT_MIN_AUROC = 0.80
+
+
+def fit_poetry(parts, target_fpr, hs, as_):
+    """诗词：分别拟合几种特征组合，在四种互相独立的对照上比较，按"最差情况"选（它得在你的诗上也站得住）：
+    ChangAn 保留集；复述故事的 AI 诗 vs ChangAn 人写；ChangAn AI vs 唐宋名篇；复述故事的 AI 诗 vs 唐宋名篇。"""
+    target_fpr = PROFILE_TARGET_FPR.get("zh_poetry", target_fpr)
+    test = parts.get("po_test", [])
+    story = parts.get("po_story", [])
+    classic = parts.get("po_classic", [])
+    comparisons = {
+        "ChangAn 保留集": ([r for r in test if r["y"] == 1], [r for r in test if r["y"] == 0]),
+        "故事诗 vs 当代人写": (story, [r for r in test if r["y"] == 0]),
+        "ChangAn AI vs 唐宋名篇": ([r for r in test if r["y"] == 1], classic),
+        "故事诗 vs 唐宋名篇": (story, classic),
+    }
+    table, fitted = {}, {}
+    for name, feats in POETRY_VARIANTS.items():
+        rows_ok = all(any(scoring.feature_value(r, f) is not None for r in hs) for f in feats)
+        if not rows_ok:
+            continue
+        res = scoring.calibrate(hs, as_, target_fpr, features=feats)
+        cal = dict(scoring.DEFAULTS); cal.update(res["calibration"])
+        aurocs = {}
+        for cname, (pos, neg) in comparisons.items():
+            if pos and neg:
+                pp = [scoring.combine(r["s"], cal)["prob"] for r in pos]
+                pn = [scoring.combine(r["s"], cal)["prob"] for r in neg]
+                aurocs[cname] = round(auroc([p for p in pp if p is not None], [p for p in pn if p is not None]), 4)
+        table[name] = aurocs
+        fitted[name] = res
+    best = max(table, key=lambda k: (min(table[k].values()) if table[k] else 0))
+    res = fitted[best]
+    cal = res["calibration"]
+    worst = min(table[best].values()) if table[best] else 0
+    cal["reference_only"] = worst < POETRY_COUNT_MIN_AUROC
+    cal["models"] = {"observer": config.OBSERVER_MODEL, "performer": config.PERFORMER_MODEL,
+                     "classifier": config.classifier_for("zh_poetry")}
+    cal["source"] = PROFILE_SOURCE["zh_poetry"]
+    cal["note"] = (f"内置默认校准（诗词）：{best}；最差情况 AUROC {worst}。"
+                   + ("诗词检测在不同来源之间不够稳定，诗词结果只作参考、不计入 AI 率。" if cal["reference_only"] else ""))
+    res["report"]["feature_selection"] = {k: min(v.values()) if v else None for k, v in table.items()}
+    res["report"]["feature_set"] = best
+    res["report"]["variant_table"] = table
+    res["report"]["reference_only"] = cal["reference_only"]
+    ev = [evaluate_rows(parts[p], cal, name) for p, name in PROFILE_PARTS["zh_poetry"]["eval"] if parts.get(p)]
     return {"calibration": cal, "report": res["report"], "evaluation": ev}
 
 
@@ -464,7 +538,12 @@ def stage_fit(args):
         lines.append(f"- 数据：{PROFILE_SOURCE[p]}")
         lines.append(f"- 校准集 {rep['n_human']} 人写 / {rep['n_ai']} AI；阈值 {r['calibration']['threshold']}；"
                      f"交叉验证 AUROC {rep.get('combined_auroc')}；特征 {', '.join(rep.get('features_used') or [])}")
-        if rep.get("feature_selection"):
+        if rep.get("variant_table"):
+            lines.append("- 特征组合比较（四种独立对照的 AUROC，按最差情况选）：")
+            for k, v in rep["variant_table"].items():
+                lines.append(f"  - {k}：" + "，".join(f"{c} {a}" for c, a in v.items()) + f"（最差 {min(v.values()) if v else None}）")
+            lines.append(f"- 选用：{rep['feature_set']}" + ("；**诗词结果只作参考，不计入 AI 率**" if rep.get("reference_only") else ""))
+        elif rep.get("feature_selection"):
             lines.append("- 特征组合比较（校准集交叉验证 AUROC）：" +
                          "，".join(f"{k} {v}" for k, v in rep["feature_selection"].items()) + f" → 选用{rep['feature_set']}")
         for e in r["evaluation"]:
@@ -502,6 +581,7 @@ def main():
     ap.add_argument("--mage-dir", help="MAGE 数据目录（英文）")
     ap.add_argument("--classical-dir", help="NiuTrans Classical-Modern 仓库目录（文言）")
     ap.add_argument("--changan-dir", help="ChangAn 仓库目录（诗词）")
+    ap.add_argument("--cpoetry-dir", help="chinese-poetry 仓库目录（唐诗三百首、宋词三百首）")
     ap.add_argument("--n-po-cal", type=int, default=800)
     ap.add_argument("--n-po-test", type=int, default=600)
     ap.add_argument("--scores-dir", default="/tmp/eval_scores")

@@ -67,6 +67,10 @@ def is_title(line: str) -> bool:
         return False
     if re.fullmatch(r".{1,12}[：:]", s):              # "对联：" 这类短标签
         return True
+    # 单独一行、不带任何标点的短标题（如"黄四娘"）；5 字 / 7 字的可能是没加标点的诗句，不算
+    cjk = len(_CJK.findall(s))
+    if (2 <= cjk <= 16 and cjk == len(re.sub(r"\s", "", s)) and cjk not in (5, 7)):
+        return True
     if ("，" in s or "," in s) and "——" not in s and len(s) > 16:
         return False                                  # 带逗号的长句多半是正文
     return bool(_TITLE_MARK.search(s))
@@ -257,24 +261,28 @@ def _merge_short(segments):
 
 
 def _flag_quotations(segments):
-    """标出"以引文为主"的段落（不计入 AI 率）。按整篇文稿判断，避免把作者自己的文字误当引文：
-    - 现代汉语论文里夹的大段文言 → 视为古籍引文；但如果全文以文言为主（如文言小说、仿古文），文言就是正文。
+    """标出"以引文为主"的段落（不计入 AI 率）。按"作品"（标题行分开的每一块）判断，避免把作者自己的文字误当引文：
+    - 现代汉语论文里夹的大段文言 → 视为古籍引文；但如果这篇作品以文言为主（如文言小说、仿古文），文言就是正文。
     - 现代汉语文章里没有标题、夹在正文中的诗词 → 视为引用的诗词；带标题的（如"七律《……》"）是独立作品，照常计入。
-    - 引号内文字占一半以上的段落 → 视为引文；但如果这类段落超过正文的 30%，或全文以文言为主，多半是小说/对话体，照常计入。"""
-    body = [s for s in segments if s.kind == "body"]
-    total = sum(len(s.text) for s in body) or 1
-    cjk_body = [s for s in body if s.register != "en"]
-    cjk_total = sum(len(s.text) for s in cjk_body) or 1
-    classical_chars = sum(len(s.text) for s in cjk_body if s.register == "zh_classical")
-    classical_doc = classical_chars >= 0.5 * cjk_total
-    modern_doc = sum(len(s.text) for s in cjk_body if s.register == "zh") >= 0.5 * cjk_total
-    quoted = [(s, quotation_ratio(s.text)) for s in cjk_body]
-    quote_heavy = [s for s, q in quoted if q >= 0.5]
-    dialogue_doc = classical_doc or sum(len(s.text) for s in quote_heavy) >= 0.3 * total
-    for s, q in quoted:
-        if q >= 0.5 and not dialogue_doc:
-            s.kind, s.notes = "quotation", [f"引号内文字约占 {q:.0%}"]
-        elif s.register == "zh_classical" and not classical_doc and len(s.text) >= 40:
-            s.kind, s.notes = "quotation", [f"文言段落（文言虚词 {classical_ratio(s.text):.0%}），疑为古籍引文"]
-        elif s.register == "zh_poetry" and modern_doc and not s.title:
-            s.kind, s.notes = "quotation", ["正文中引用的诗词（无标题）"]
+    - 引号内文字占一半以上的段落 → 视为引文；但如果这类段落超过该作品正文的 30%，或作品以文言为主，多半是小说/对话体，照常计入。"""
+    blocks: dict[int, list] = {}
+    for s in segments:
+        if s.kind == "body":
+            blocks.setdefault(s.block, []).append(s)
+    for body in blocks.values():
+        total = sum(len(s.text) for s in body) or 1
+        cjk_body = [s for s in body if s.register != "en"]
+        cjk_total = sum(len(s.text) for s in cjk_body) or 1
+        classical_chars = sum(len(s.text) for s in cjk_body if s.register == "zh_classical")
+        classical_doc = classical_chars >= 0.5 * cjk_total
+        modern_doc = sum(len(s.text) for s in cjk_body if s.register == "zh") >= 0.5 * cjk_total
+        quoted = [(s, quotation_ratio(s.text)) for s in cjk_body]
+        quote_heavy = [s for s, q in quoted if q >= 0.5]
+        dialogue_doc = classical_doc or sum(len(s.text) for s in quote_heavy) >= 0.3 * total
+        for s, q in quoted:
+            if q >= 0.5 and not dialogue_doc:
+                s.kind, s.notes = "quotation", [f"引号内文字约占 {q:.0%}"]
+            elif s.register == "zh_classical" and not classical_doc and len(s.text) >= 40:
+                s.kind, s.notes = "quotation", [f"文言段落（文言虚词 {classical_ratio(s.text):.0%}），疑为古籍引文"]
+            elif s.register == "zh_poetry" and modern_doc and not s.title:
+                s.kind, s.notes = "quotation", ["正文中引用的诗词（无标题）"]

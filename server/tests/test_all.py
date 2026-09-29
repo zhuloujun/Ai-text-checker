@@ -481,3 +481,16 @@ def test_download_models_tarball(tmp_path):
     tar.write_bytes(buf.getvalue())
     out = download_models.fetch_tarball(tar.as_uri(), str(tmp_path / "dest" / "model"))
     assert (out / "config.json").exists()
+
+
+def test_memorized_guard_and_bare_title():
+    import math
+    from app.engine import memorized
+    assert memorized({"ppl": math.log(1.9), "classifier": 0.005})          # 名篇：困惑度极低、分类器判人写
+    assert not memorized({"ppl": math.log(1.9), "classifier": 0.9})        # 分类器也判 AI：不算名篇
+    assert not memorized({"ppl": math.log(20), "classifier": 0.01})
+    # 不带标点的短标题行把文言小说与后面的作品分开；独立的文言作品照常计入
+    doc = "\n\n".join(["黄四娘", CLASSICAL, CLASSICAL, "诗·七律《咏春》", POEM.split("\n", 1)[1], "读后感", MODERN * 3])
+    segs = segment_text(doc)
+    story = [s for s in segs if s.register == "zh_classical"]
+    assert story and story[0].title == "黄四娘" and all(s.kind == "body" for s in story)

@@ -57,6 +57,11 @@ SEGMENT_FLUSH_CHARS_CLASSICAL = _int("SEGMENT_FLUSH_CHARS_CLASSICAL", 120)
 SEGMENT_FLUSH_CHARS_EN = _int("SEGMENT_FLUSH_CHARS_EN", 600)
 # 现代汉语段落短于这个字数时，改用"短段"校准（有的话）：短文本信号弱，需要单独的阈值
 SHORT_SEGMENT_CHARS = _int("SHORT_SEGMENT_CHARS", 200)
+# 篇幅短的提示（Turnitin 要求英文至少 300 词才给结果；这里对单段放宽，只做标注）
+SHORT_CHARS_ZH = _int("SHORT_CHARS_ZH", 100)
+SHORT_WORDS_EN = _int("SHORT_WORDS_EN", 150)
+# "疑似名篇"判定：语言模型困惑度低于此值且分类器判为人写
+MEMORIZED_PPL = float(os.getenv("MEMORIZED_PPL", "3.5") or 3.5)
 FAST_MODE_MAX_SEGMENTS = _int("FAST_MODE_MAX_SEGMENTS", 60)  # 快速模式下语言模型最多检测多少段
 # 相邻段落平滑强度（0 = 不平滑，0.3 = 本段 70% + 相邻段 30%）
 SMOOTHING = float(os.getenv("SMOOTHING", "0.3") or 0.3)
