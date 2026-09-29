@@ -548,3 +548,15 @@ def test_work_level_consistency(client, monkeypatch):
     res = run([0.1, 0.1, 0.9, 0.42])
     body = [s for s in res["segments"] if s["prob"] is not None]
     assert not body[-1]["by_work"] and body[-1]["near_threshold"] and body[-1]["level"] == "low"
+
+
+def test_works_summary_per_title(client):
+    """按标题分篇汇总（类似知网的章节 AI 率）。"""
+    h = {"Authorization": "Bearer " + issue(client)}
+    text = "《第一篇》\n\n" + MODERN * 2 + "\n\n《第二篇》\n\n" + CLASSICAL * 2
+    res = client.post("/v1/detect", json={"text": text}, headers=h).json()["result"]
+    works = res["works"]
+    assert [w["title"] for w in works] == ["《第一篇》", "《第二篇》"]
+    for w in works:
+        assert w["counted"] and 0 <= w["ai_rate"] <= 1 and w["verdict"]
+    assert works[1]["registers"] == ["zh_classical"]

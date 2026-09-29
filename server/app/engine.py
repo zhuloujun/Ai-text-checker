@@ -55,6 +55,48 @@ def score_text(seg) -> str:
     return seg.text
 
 
+def works_summary(seg_out: list) -> list:
+    """按作品（标题分开的部分）汇总，类似知网报告里的“章节 / 片段 AI 率”：每篇给出字数、AI 率和结论。"""
+    works: dict = {}
+    for seg in seg_out:
+        w = works.setdefault(seg["block"], {"block": seg["block"], "title": "", "chars": 0, "counted": 0,
+                                            "flagged": 0, "psum": 0.0, "refsum": 0.0, "refchars": 0,
+                                            "registers": [], "segments": 0})
+        if seg["title"] and not w["title"]:
+            w["title"] = seg["title"]
+        w["chars"] += seg["chars"]
+        w["segments"] += 1
+        if seg["register"] not in w["registers"]:
+            w["registers"].append(seg["register"])
+        if seg["prob"] is not None:
+            w["counted"] += seg["chars"]
+            w["psum"] += seg["prob"] * seg["chars"]
+            if seg["level"] in ("high", "mid", "light"):
+                w["flagged"] += seg["chars"]
+        elif seg["kind"] == "reference_only" and seg["ref_prob"] is not None:
+            w["refchars"] += seg["chars"]
+            w["refsum"] += seg["ref_prob"] * seg["chars"]
+    out = []
+    for w in works.values():
+        if not w["title"]:
+            first = next((x["text"] for x in seg_out if x["block"] == w["block"]), "")
+            w["title"] = first.strip().splitlines()[0][:20] + "……" if first.strip() else "（无标题）"
+        if w["counted"]:
+            rate = w["flagged"] / w["counted"]
+            verdict = "疑似 AI 生成" if rate >= 0.5 else "部分段落疑似 AI" if rate > 0 else "未见明显 AI 特征"
+            out.append({**{k: w[k] for k in ("block", "title", "chars", "registers", "segments")},
+                        "ai_rate": round(rate, 4), "mean_prob": round(w["psum"] / w["counted"], 4),
+                        "counted": True, "verdict": verdict})
+        elif w["refchars"]:
+            out.append({**{k: w[k] for k in ("block", "title", "chars", "registers", "segments")},
+                        "ai_rate": None, "mean_prob": round(w["refsum"] / w["refchars"], 4),
+                        "counted": False, "verdict": "仅供参考（诗词不计入）"})
+        else:
+            out.append({**{k: w[k] for k in ("block", "title", "chars", "registers", "segments")},
+                        "ai_rate": None, "mean_prob": None, "counted": False, "verdict": "未计入（引文 / 参考文献）"})
+    return out
+
+
 class Engine:
     def __init__(self):
         self.lm = LMScorer() if config.ENABLE_LM else None
@@ -437,6 +479,7 @@ class Engine:
                 "elapsed_sec": round(time.time() - t_start, 1),
             },
             "segments": seg_out,
+            "works": works_summary(seg_out),
         }
 
     def estimate_seconds(self, text: str, mode: str) -> float | None:

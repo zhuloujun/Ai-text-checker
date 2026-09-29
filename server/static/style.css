@@ -648,3 +648,15 @@ body{
 .para-label button{ background:none; border:1px solid var(--hairline); color: var(--muted); font-size: 11.5px;
   padding: 1px 8px; cursor:pointer; font-family: inherit; }
 .para-label button.on{ border-color: var(--ink); color: var(--ink); font-weight: 600; }
+
+/* 分篇结果 */
+.works-box{margin:14px 0 18px}
+.works-title{font-size:15px;margin:0 0 8px}
+.works-table{width:100%;border-collapse:collapse;font-size:13px}
+.works-table th,.works-table td{padding:6px 8px;border-bottom:1px solid rgba(128,128,128,.25);text-align:left;vertical-align:top}
+.works-table th{font-weight:600;opacity:.8}
+.works-table tr.work-high td:last-child{color:#c0392b;font-weight:600}
+.works-table tr.work-light td:last-child{color:#d68910;font-weight:600}
+.works-table tr.work-low td:last-child{color:#1e8449}
+.works-table tr.work-none td:last-child{opacity:.7}
+@media (max-width:640px){.works-box{overflow-x:auto}.works-table{min-width:520px}}

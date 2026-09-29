@@ -300,6 +300,23 @@ const sigName = (k, seg)=> k === 'classifier'
   ? (seg && seg.register === 'en' ? '英文分类器' : seg && seg.register === 'zh_poetry' && health && health.classifier_poetry && health.classifier_poetry.ready ? '诗词分类器' : 'MPU 中文分类器')
   : (SIG_NAME[k] || k);
 
+function workLevel(w){
+  if(!w.counted) return 'none';
+  return w.ai_rate >= 0.5 ? 'high' : w.ai_rate > 0 ? 'light' : 'low';
+}
+function renderWorks(works){
+  const box = $('worksBox');
+  if(!works || works.length < 2){ box.hidden = true; box.innerHTML = ''; return; }
+  box.hidden = false;
+  box.innerHTML = `<h3 class="works-title">分篇结果（按标题分开的每篇作品）</h3>
+    <table class="works-table"><thead><tr><th>作品</th><th>文体</th><th>字数</th><th>AI 率</th><th>平均 AI 概率</th><th>结论</th></tr></thead><tbody>` +
+    works.map(w=>`<tr class="work-${workLevel(w)}"><td>${escapeHtml(w.title)}</td>
+      <td>${w.registers.map(r=>REG_NAME[r]||r).join('、')}</td><td>${w.chars}</td>
+      <td>${w.ai_rate==null ? '—' : pct(w.ai_rate)}</td>
+      <td>${w.mean_prob==null ? '—' : pct(w.mean_prob) + (w.counted ? '' : '（参考）')}</td>
+      <td>${escapeHtml(w.verdict)}</td></tr>`).join('') + '</tbody></table>';
+}
+
 function renderResult(res){
   const s = res.summary;
   sealNum.textContent = s.ai_rate == null ? '—' : pct(s.ai_rate);
@@ -324,6 +341,7 @@ function renderResult(res){
     (s.excluded_reference_segments || s.excluded_quotation_segments
       ? ` · 未计入：参考文献 ${s.excluded_reference_segments} 段、引文为主 ${s.excluded_quotation_segments} 段` : '');
 
+  renderWorks(res.works || []);
   paragraphList.innerHTML = '';
   res.segments.forEach(seg=>{
     const div = document.createElement('div');
@@ -433,6 +451,13 @@ exportBtn.addEventListener('click', ()=>{
   out += `方法：Fast-DetectGPT、Binoculars（Qwen2.5 打分）、MPU 中文分类器、desklib 英文分类器（按段落文体选用）；模式：${s.mode === 'fast' ? '快速（抽样）' : '完整'}\n`;
   if(s.chars_by_register) out += `文体：${Object.entries(s.chars_by_register).map(([k,v])=>`${REG_NAME[k]||k} ${v} 字`).join('、')}\n`;
   out += `\n【说明】任何 AI 检测都有误判，本报告只供作者自查，不能作为学术不端判定依据。\n`;
+  const works = lastResult.works || [];
+  if(works.length > 1){
+    out += `\n${'='.repeat(60)}\n分篇结果\n${'='.repeat(60)}\n`;
+    works.forEach(w=>{
+      out += `${w.title} | ${w.registers.map(r=>REG_NAME[r]||r).join('、')} | ${w.chars} 字 | AI 率 ${w.ai_rate==null ? '—' : pct(w.ai_rate)} | 平均 AI 概率 ${w.mean_prob==null ? '—' : pct(w.mean_prob)} | ${w.verdict}\n`;
+    });
+  }
   out += `\n${'='.repeat(60)}\n分段结果\n${'='.repeat(60)}\n`;
   lastResult.segments.forEach(seg=>{
  const tag = seg.kind === 'reference' ? '参考文献，不计入' : seg.kind === 'quotation' ? '引文为主，不计入' : seg.kind === 'reference_only' ? '仅供参考，不计入' : (seg.label || (seg.near_threshold ? '接近阈值（未计入）' : '未达阈值'));
