@@ -1,0 +1,25 @@
+# 诊断用：查看线上服务实际运行的版本（只能手动运行）
+name: 线上诊断
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: pip install "modal==1.5.5"
+      - name: 查询
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: |
+          for u in https://ai-text-checker.agi001.workers.dev/health https://zhuloujun--ai-text-checker-web.modal.run/health; do
+            echo "== $u"; curl -s -m 60 "$u?t=$(date +%s)" | head -c 1500; echo
+          done
+          echo "== static"; curl -s -m 60 "https://zhuloujun--ai-text-checker-web.modal.run/static/app.js" | grep -c classifier_classical || true
+          modal app list 2>&1 | head -20
+          modal app history ai-text-checker 2>&1 | head -15
+          modal container list 2>&1 | head -10
+          { echo '```'; modal app history ai-text-checker 2>&1 | head -15; modal container list 2>&1 | head -10; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          curl -s -m 60 "https://zhuloujun--ai-text-checker-web.modal.run/health" | python3 -c "import json,sys;d=json.load(sys.stdin);print('::notice title=health::'+json.dumps({k:d.get(k) for k in ('loading','classifier_classical','classifier_poetry')},ensure_ascii=False))" || true
