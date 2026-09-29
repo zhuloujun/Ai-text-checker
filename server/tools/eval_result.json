@@ -325,9 +325,9 @@
    ],
    "cross_validated": true,
    "combined_auroc": 0.9956,
-   "threshold": 0.5,
-   "human_flagged_rate": 0.0424,
-   "ai_caught_rate": 0.9625,
+   "threshold": 0.6374,
+   "human_flagged_rate": 0.0339,
+   "ai_caught_rate": 0.9375,
    "note": "以上指标用 5 折交叉验证（每次用没参与拟合的样本）算出；样本越多、越接近你要检测的文本，越可信。",
    "feature_selection": {
     "全部特征": 0.9956,
@@ -343,8 +343,8 @@
     "n_human": 143,
     "n_ai": 40,
     "auroc": 0.9944,
-    "ai_caught": 0.95,
-    "human_flagged": 0.049,
+    "ai_caught": 0.925,
+    "human_flagged": 0.021,
     "per_signal_auroc": {
      "fastdetect": 0.8934,
      "binoculars": 0.103,
@@ -359,7 +359,7 @@
      "style_phrases": 0.4965
     },
     "ai_caught_by_model": {
-     "llm-classical": 0.95
+     "llm-classical": 0.925
     },
     "human_flagged_by_source": {
      "入蜀记": 0.0,
@@ -367,27 +367,27 @@
      "困学纪闻": 0.0,
      "幽明录": 0.0,
      "搜神记": 0.0,
-     "新唐书": 0.1818,
+     "新唐书": 0.0909,
      "旧五代史": 0.0,
-     "明夷待访录": 0.0909,
+     "明夷待访录": 0.0,
      "武林旧事": 0.0,
      "聊斋志异": 0.0,
-     "西湖梦寻": 0.2727,
+     "西湖梦寻": 0.0909,
      "资治通鉴": 0.0,
      "金史": 0.0,
      "陶庵梦忆": 0.0909
     }
    },
    {
-    "name": "国产新模型 AI 文言故事（DeepSeek / Kimi / 文心一言，用户提供，不参与校准）",
+    "name": "国产新模型 AI 文言故事（DeepSeek / Kimi / 文心一言；不参与校准，但其中 2/3 用于训练文言分类器，没见过的那 1/3 见分类器训练报告）",
     "n_human": 0,
     "n_ai": 50,
     "auroc": null,
-    "ai_caught": 0.82,
+    "ai_caught": 0.8,
     "human_flagged": null,
     "per_signal_auroc": {},
     "ai_caught_by_model": {
-     "repo-ai-deepseek": 0.7857,
+     "repo-ai-deepseek": 0.75,
      "repo-ai-kimi": 0.8333,
      "repo-ai-wenxin": 0.9
     },
