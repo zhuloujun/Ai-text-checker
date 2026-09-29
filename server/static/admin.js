@@ -107,7 +107,7 @@ $('calBtn').addEventListener('click', async ()=>{
         <button class="primary-btn" id="applyBtn">立即启用</button>
         <button class="ghost-btn" id="copyCal">复制 JSON</button>
       </div>
-      <p class="msg">要永久保存：先点“立即启用”（会与其他文体的现有校准合并），再点“复制 JSON”，在 GitHub 仓库 Settings → Secrets and variables → Actions 的 <b>Variables</b> 里新建或修改 <code>CALIBRATION_JSON</code>，粘贴进去，然后重新部署。</p>`;
+      <p class="msg">点“立即启用”后会永久保存（服务重启后仍有效），只替换这一种文体的校准。</p>`;
     let merged = null;
     $('applyBtn').addEventListener('click', async ()=>{
       try{
@@ -149,4 +149,57 @@ $('importLabels').addEventListener('click', ()=>{
   const others = Object.entries(byReg).filter(([k])=>k!==reg).map(([k,v])=>`${names[k]||k} ${v} 段`).join('、');
   msg($('calMsg'), `已导入${names[reg]||reg}的标注：人写 ${hu.length} 段、AI ${ai.length} 段。` +
       (others ? `另有 ${others}，请切换"校准哪种文体"后再导入一次、分别校准。` : '') + '勾选"与内置公开数据合并"后点"开始校准"。', true);
+});
+
+
+/* 一键：把网页上的全部标注按文体分别校准，并永久启用 */
+const REG_NAMES = { zh:'现代汉语', zh_classical:'文言', zh_poetry:'诗词', en:'英文' };
+async function runCalJob(body, m, label){
+  let job = await call('/admin/api/calibrate', { method:'POST', body: JSON.stringify(body) });
+  while(job.status === 'queued' || job.status === 'running'){
+    msg(m, `${label}：${job.status === 'queued' ? '排队中…' : `打分中 ${job.done} / ${job.total} 段`}`, true);
+    await sleep(2000);
+    job = await call('/admin/api/jobs/' + job.id);
+  }
+  if(job.status === 'error') throw new Error(job.error);
+  return job.result;
+}
+$('quickCal').addEventListener('click', async ()=>{
+  const m = $('quickMsg');
+  let labels = {};
+  try{ labels = JSON.parse(localStorage.getItem('shendu_labels') || '{}'); }catch(e){}
+  const items = Object.values(labels);
+  if(!items.length){ msg(m, '本浏览器里还没有标注。请先在首页的检测结果里，给段落点“这段是 AI / 这段是人写”。（标注和管理页必须在同一个浏览器里）', false); return; }
+  const byReg = {};
+  items.forEach(x=>{ (byReg[x.register || 'zh'] = byReg[x.register || 'zh'] || []).push(x); });
+  $('quickCal').disabled = true;
+  const lines = [];
+  try{
+    for(const [reg, arr] of Object.entries(byReg)){
+      try{
+      const human = arr.filter(x=>x.label === 'human').map(x=>x.text);
+      const ai = arr.filter(x=>x.label === 'ai').map(x=>x.text);
+      const name = REG_NAMES[reg] || reg;
+      const { calibration, report } = await runCalJob({ human, ai, target_fpr: 0.05, profile: reg, include_builtin: true, trust_register: true,
+        count_in_rate: reg === 'zh_poetry' && $('quickPoetry').checked }, m, name);
+      const d = await call('/admin/api/calibration', { method:'POST', body: JSON.stringify({ calibration }) });
+      const us = report.user_samples || {};
+      lines.push(`${name}：人写 ${human.length} 段、AI ${ai.length} 段` +
+        (us.n_ai ? `；你的 AI 段落识别出 ${(us.ai_caught_rate*100).toFixed(0)}%` : '') +
+        (us.n_human ? `；你的人写段落误判 ${(us.human_flagged_rate*100).toFixed(0)}%` : '') +
+        `；公开数据上人写误判约 ${(report.human_flagged_rate*100).toFixed(1)}%`);
+      if(!d.saved) lines.push('（注意：保存失败，服务重启后会恢复默认）');
+      }catch(e){ lines.push(`${REG_NAMES[reg] || reg}：未能校准（${e.message}）`); }
+    }
+    msg(m, '校准完成并已永久保存。' + lines.join('。') + '。回首页重新检测即可看到新结果。', true);
+  }catch(e){
+    msg(m, (lines.length ? '部分完成：' + lines.join('。') + '。' : '') + '出错：' + e.message, false);
+  }finally{
+    $('quickCal').disabled = false;
+  }
+});
+$('resetCal').addEventListener('click', async ()=>{
+  if(!confirm('确定清除所有“用我的标注校准”的结果、恢复内置默认校准吗？（浏览器里的标注不会删除）')) return;
+  try{ const d = await call('/admin/api/calibration', { method:'DELETE' }); msg($('quickMsg'), d.message, true); }
+  catch(e){ msg($('quickMsg'), e.message, false); }
 });

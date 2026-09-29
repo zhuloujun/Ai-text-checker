@@ -16,6 +16,7 @@ os.environ.update({
     "EN_CLASSIFIER_MODEL": f"{MD}/desklib_en", "POETRY_CLASSIFIER_MODEL": f"{MD}/desklib_en/../cls",
     "ADMIN_TOKEN": "test-admin-pw", "LM_MAX_TOKENS": "128", "CALIBRATION_FILE": "/nonexistent/cal.json",
     "MAX_TEXT_CHARS": "300000",
+    "USER_CALIBRATION_FILE": f"/tmp/test_user_calibration_{os.getpid()}.json",
 })
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -560,3 +561,42 @@ def test_works_summary_per_title(client):
     for w in works:
         assert w["counted"] and 0 <= w["ai_rate"] <= 1 and w["verdict"]
     assert works[1]["registers"] == ["zh_classical"]
+
+
+def test_user_calibration_persists_and_resets(client):
+    """管理页启用的标注校准写入持久文件，重启（重新加载）后仍在；恢复默认后清除。"""
+    from app import config
+    from app.main import engine
+    h = {"X-Admin-Token": "test-admin-pw"}
+    cal = dict(engine.cal)
+    cal.pop("profiles", None)
+    cal.update({"profile": "zh_classical", "threshold": 0.4242, "models": {
+        "observer": config.OBSERVER_MODEL, "performer": config.PERFORMER_MODEL,
+        "classifier": config.classifier_for("zh_classical")}})
+    r = client.post("/admin/api/calibration", json={"calibration": cal}, headers=h)
+    assert r.status_code == 200 and r.json()["saved"], r.text
+    assert "zh_classical" in config.load_user_profiles()
+    engine.reload_calibration()                      # 模拟服务重启
+    assert scoring.profile_for(engine.cal, "zh_classical")[0]["threshold"] == 0.4242
+    assert "标注校准" in engine.cal_source
+    r = client.delete("/admin/api/calibration", headers=h)
+    assert r.status_code == 200
+    assert config.load_user_profiles() == {}
+    assert scoring.profile_for(engine.cal, "zh_classical")[0].get("threshold") != 0.4242
+
+
+def test_calibrate_trusts_labeled_register(client, monkeypatch):
+    """报告页标注的诗词单独提交时，按标注时的文体（诗词）校准，而不是重新判断后被丢掉。"""
+    import random
+    from app import engine as eng
+    rnd = random.Random(2)
+    fake = ([{"y": 0, "s": {"fastdetect": rnd.gauss(0, 1), "binoculars": rnd.gauss(1.0, .05), "classifier": rnd.uniform(.01, .4)}} for _ in range(60)]
+            + [{"y": 1, "s": {"fastdetect": rnd.gauss(2.5, 1), "binoculars": rnd.gauss(.85, .05), "classifier": rnd.uniform(.6, .99)}} for _ in range(60)])
+    monkeypatch.setattr(eng, "load_builtin_calib", lambda profile: fake)
+    poem = "词·《临江仙·黄四娘》\n浣花溪畔废园里，牡丹幻作红裙。杜诗千载赋花魂。陈生一顾，夜夜共芳樽。"
+    r = client.post("/admin/api/calibrate", json={"human": [], "ai": [poem], "profile": "zh_poetry",
+                                                   "include_builtin": True, "trust_register": True}, headers=ADMIN)
+    j = poll(client, r.json()["id"], ADMIN, "/admin/api/jobs/")
+    assert j["status"] == "done", j
+    assert j["result"]["report"]["user_ai"] == 1
+    assert j["result"]["calibration"]["profile"] == "zh_poetry"

@@ -112,6 +112,18 @@ class Engine:
 
     # ---------- 加载 ----------
     def _load_cal(self):
+        cal, source = self._load_base_cal()
+        user = config.load_user_profiles()
+        for prof, c in user.items():
+            cal = scoring.merge_profile(cal, c, prof)
+        if user:
+            source += "；已叠加你的标注校准（" + "、".join(scoring.PROFILE_NAMES.get(p, p) for p in user) + "）"
+        return cal, source
+
+    def reload_calibration(self):
+        self.cal, self.cal_source = self._load_cal()
+
+    def _load_base_cal(self):
         default = config.load_default_calibration()
         override, source = config.load_calibration_override()
         if override:
@@ -595,11 +607,18 @@ def run_calibration(engine: Engine, p: dict, progress=None) -> dict:
     这样即使只标了几段（甚至只标了 AI 一类），也能在不破坏整体效果的前提下向你的文字偏移。"""
     engine.wait_loaded()
 
+    forced = p.get("profile") if p.get("trust_register") and p.get("profile") not in (None, "", "auto") else None
+
     def to_segments(texts):
         out = []
         for t in texts:
             for s in segment_text(t, True, False):
-                if s.counted and len(s.text) >= min_chars(s.register):
+                if forced:
+                    # 来自报告页的逐段标注：文体已在检测时判定，直接按该文体使用（诗词、单独一段文言重新切分时可能被判成别的文体）
+                    if s.kind != "reference" and len(s.text) >= min_chars(forced):
+                        s.register = forced
+                        out.append(s)
+                elif s.counted and len(s.text) >= min_chars(s.register):
                     out.append(s)
         return out
 

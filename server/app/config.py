@@ -136,6 +136,38 @@ def load_default_calibration():
     return None
 
 
+# 管理页“用我的标注校准”后启用的各文体校准，永久保存在这个文件里（线上放在 Modal 持久卷上，服务重启后仍有效）。
+# 只保存用户自己校准过的文体；其余文体始终跟随内置默认校准的更新。
+USER_CALIBRATION_FILE = Path(os.getenv("USER_CALIBRATION_FILE", str(BASE_DIR / "user_calibration.json")))
+CALIBRATION_VOLUME = os.getenv("CALIBRATION_VOLUME", "")
+
+
+def load_user_profiles() -> dict:
+    try:
+        d = json.loads(USER_CALIBRATION_FILE.read_text("utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return {p: c for p, c in (d.get("profiles") or {}).items()
+            if isinstance(c, dict) and _models_match(c, p)}
+
+
+def save_user_profiles(profiles: dict) -> bool:
+    """写入并提交到持久卷。返回是否成功永久保存。"""
+    try:
+        USER_CALIBRATION_FILE.parent.mkdir(parents=True, exist_ok=True)
+        USER_CALIBRATION_FILE.write_text(json.dumps({"format": "user_profiles_v1", "profiles": profiles},
+                                                    ensure_ascii=False, indent=1), "utf-8")
+    except OSError:
+        return False
+    if CALIBRATION_VOLUME:
+        try:
+            import modal
+            modal.Volume.from_name(CALIBRATION_VOLUME).commit()
+        except Exception:  # noqa: BLE001  提交失败时，容器正常退出时 Modal 也会自动提交
+            pass
+    return True
+
+
 def load_calibration_override():
     """管理员自己的校准：环境变量 CALIBRATION_JSON 优先，其次 calibration.json。"""
     raw = os.getenv("CALIBRATION_JSON", "").strip()

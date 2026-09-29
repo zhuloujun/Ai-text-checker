@@ -243,6 +243,7 @@ class CalibrateIn(BaseModel):
     profile: str = Field("auto", description="auto / zh（现代汉语）/ zh_classical（文言）/ zh_poetry（诗词）/ en（英文）")
     include_builtin: bool = Field(True, description="与内置公开数据合并（推荐；样本少时尤其需要）")
     count_in_rate: bool = Field(False, description="诗词等“只作参考”的文体，校准后是否改为计入 AI 率")
+    trust_register: bool = Field(False, description="样本来自报告页的逐段标注时为 true：直接按 profile 指定的文体使用，不重新判断文体")
 
 
 class CalibrationIn(BaseModel):
@@ -297,12 +298,22 @@ def admin_apply(body: CalibrationIn, request: Request, x_admin_token: str | None
     cal = body.calibration
     if "signals" not in cal or "threshold" not in cal:
         err(400, "bad_calibration", "校准参数格式不正确。")
-    # 只替换这次校准的文体，其他文体的校准保持不变
-    cal = scoring.merge_profile(engine.cal, cal, cal.get("profile") or "zh")
-    engine.set_calibration(cal, "管理页面（运行时，重启后失效）")
-    try:
-        Path(config.CALIBRATION_FILE).write_text(json.dumps(cal, ensure_ascii=False, indent=2), "utf-8")
-    except OSError:
-        pass
-    return {"ok": True, "calibration": cal,
-            "message": "已启用。服务重启后会恢复原设置：请在 GitHub 仓库 Settings → Secrets and variables → Actions 的 Variables 里新建 CALIBRATION_JSON，值为下面这段完整 JSON（已合并各文体的校准），然后重新部署。"}
+    # 只替换这次校准的文体，其他文体的校准保持不变；并永久保存（服务重启后仍有效）
+    prof = cal.get("profile") or "zh"
+    user = config.load_user_profiles()
+    user[prof] = {k: v for k, v in cal.items() if k != "profiles"}
+    saved = config.save_user_profiles(user)
+    engine.reload_calibration()
+    names = "、".join(scoring.PROFILE_NAMES.get(p, p) for p in user)
+    return {"ok": True, "calibration": engine.cal, "saved": saved,
+            "message": (f"已启用并永久保存（服务重启后仍然有效）。目前使用你自己标注校准的文体：{names}。" if saved else
+                        "已启用，但保存失败：服务重启后会恢复默认校准。")}
+
+
+@app.delete("/admin/api/calibration")
+def admin_reset(request: Request, x_admin_token: str | None = Header(None)):
+    """清除所有“用我的标注校准”的结果，恢复内置默认校准。"""
+    require_admin(request, x_admin_token)
+    config.save_user_profiles({})
+    engine.reload_calibration()
+    return {"ok": True, "message": "已恢复内置默认校准（你的标注仍保存在浏览器里，可随时重新校准）。"}

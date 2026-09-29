@@ -35,6 +35,8 @@ image = (
         "CLASSIFIER_MODEL": CLASSIFIER_MODEL,
         "EN_CLASSIFIER_MODEL": EN_CLASSIFIER_MODEL,
         "POETRY_CLASSIFIER_MODEL": POETRY_DIR if HAS_POETRY else "",
+        "USER_CALIBRATION_FILE": "/data/user_calibration.json",
+        "CALIBRATION_VOLUME": "ai-text-checker-data",
     })
     # 构建镜像时就把模型下载进去，启动时不用再下载
     .add_local_file("download_models.py", "/root/download_models.py", copy=True)
@@ -46,6 +48,9 @@ if HAS_POETRY:
     image = image.add_local_dir(str(POETRY_LOCAL), POETRY_DIR)
 
 app = modal.App("ai-text-checker")
+# 持久卷：保存管理页“用我的标注校准”的结果，服务重启 / 重新部署后仍然有效
+CALIB_VOLUME_NAME = "ai-text-checker-data"
+calib_volume = modal.Volume.from_name(CALIB_VOLUME_NAME, create_if_missing=True)
 
 
 @app.function(
@@ -56,6 +61,7 @@ app = modal.App("ai-text-checker")
     min_containers=0,             # 没人用时不保留容器，不计费
     max_containers=1,             # 只用一个容器：任务队列、用量统计都在内存里
     scaledown_window=600,         # 最后一次访问 10 分钟后关闭
+    volumes={"/data": calib_volume},
     secrets=[modal.Secret.from_name("ai-text-checker")],   # 含 ADMIN_TOKEN
 )
 @modal.concurrent(max_inputs=100)

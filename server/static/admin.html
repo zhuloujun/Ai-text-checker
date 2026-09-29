@@ -70,6 +70,18 @@
 
   <section class="card needs-login">
     <h2>校准</h2>
+    <div class="quick-cal">
+      <p class="hint"><strong>最简单的做法（推荐）：</strong>先在首页检测几篇你确定来源的文章，在每段下方点“这段是 AI / 这段是人写”，然后回到这里点下面的按钮。
+      系统会把你的标注按文体（现代汉语 / 文言 / 诗词 / 英文）分别与内置公开数据合并校准，并<strong>永久保存</strong>（服务重启后仍然有效）。标注越多、AI 和人写两类都有，效果越好。</p>
+      <div class="form-row">
+        <button class="primary-btn" id="quickCal" type="button">一键：用我的全部标注校准并保存</button>
+        <label><input type="checkbox" id="quickPoetry"> 诗词也计入 AI 率（默认只给参考值）</label>
+        <button class="ghost-btn" id="resetCal" type="button">恢复默认校准</button>
+      </div>
+      <p class="msg" id="quickMsg"></p>
+      <hr>
+      <p class="hint"><strong>手动校准（进阶）：</strong></p>
+    </div>
     <p class="hint">开源检测方法的默认阈值不是按中文学术文字定的。校准能让结果适合你的文字风格：左边放<strong>确定是你自己写的</strong>文字（最好是 2022 年以前、没用过 AI 的旧稿，含引文较多的也放进来），右边放<strong>AI 生成的</strong>同类文字（例如让几个不同的 AI 就相同题目写的段落）。<br>
     多篇文字之间用单独一行 <code>===</code> 分隔，也可以直接选择多个 .txt / .docx 文件追加进来。每边建议 1 万字以上；每边达到 30 段以上时，会同时学习 LRR、GLTR 名次、预测熵、困惑度波动、句式统计等扩展特征的权重，通常更准。校准会在后台运行，可能需要几分钟到十几分钟。</p>
     <div class="two">
