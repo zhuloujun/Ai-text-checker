@@ -41,7 +41,7 @@ POETRY_CLASSIFIER_URL = os.getenv(
 
 # 文言专用分类器（tools/train_classical.py 用古籍人写 vs DeepSeek / Kimi / 文心一言等生成的文言微调，发布在本仓库 Release）。
 CLASSICAL_CLASSIFIER_MODEL = os.getenv("CLASSICAL_CLASSIFIER_MODEL", "")
-CLASSICAL_CLASSIFIER_ID = os.getenv("CLASSICAL_CLASSIFIER_ID", "classical-classifier-v2")
+CLASSICAL_CLASSIFIER_ID = os.getenv("CLASSICAL_CLASSIFIER_ID", "classical-classifier-v3")
 
 ENABLE_LM = _bool("ENABLE_LM", True)
 ENABLE_CLASSIFIER = _bool("ENABLE_CLASSIFIER", True)

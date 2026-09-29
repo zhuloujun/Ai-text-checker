@@ -1,4 +1,4 @@
-# 训练"文言专用"AI 检测分类器，并把模型发布到本仓库的 Release（classical-classifier-v2）。
+# 训练"文言专用"AI 检测分类器，并把模型发布到本仓库的 Release（classical-classifier-v3）。
 # 触发：修改 server/tools/train_classical.py 或 AI 文言样本（server/tools/data/ai_*classical*）并推送，或在 Actions 页面手动运行。
 name: 训练文言检测模型
 
@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  RELEASE_TAG: classical-classifier-v2
+  RELEASE_TAG: classical-classifier-v3
 
 jobs:
   train:
@@ -48,9 +48,9 @@ jobs:
           git clone --depth 1 --filter=blob:none --sparse https://github.com/NiuTrans/Classical-Modern /tmp/classical
           cd /tmp/classical
           git sparse-checkout set --no-cone $(cd "${{ github.workspace }}/server/tools" && python3 - <<'PY'
-          from train_classical import TRAIN_BOOKS
+          from train_classical import TRAIN_BOOKS, LONG_CHECK_BOOKS
           from evaluate import CLASSICAL_TEST_BOOKS
-          print(" ".join(f"/古文原文/{b}/" for b in TRAIN_BOOKS + CLASSICAL_TEST_BOOKS))
+          print(" ".join(f"/古文原文/{b}/" for b in sorted(set(TRAIN_BOOKS + CLASSICAL_TEST_BOOKS + LONG_CHECK_BOOKS))))
           PY
           )
           ls 古文原文 | wc -l

@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import csv
 import glob
+import hashlib
 import json
 import os
 import random
@@ -282,13 +283,25 @@ def en_parts(args):
     return {"en_cal1": cal[:half], "en_cal2": cal[half:], "en_ood": ood_s, "en_para": para_s + extra}
 
 
-def classical_passages(root, books, n, seed, lengths):
-    """从古籍中抽取段落，长度按 AI 样本的长度分布截取（在句末截断），避免"长度"本身成为区分线索。"""
+# 这几部书既用来训练文言分类器（AI 常模仿它们），又用来评估：按篇目对半分，训练只用一半，评估只用另一半
+SPLIT_BOOKS = {"聊斋志异", "唐传奇"}
+
+
+def file_half(path) -> str:
+    rel = path.split("古文原文", 1)[-1]
+    return "train" if int(hashlib.md5(rel.encode("utf-8")).hexdigest(), 16) % 2 == 0 else "eval"
+
+
+def classical_passages(root, books, n, seed, lengths, half="eval"):
+    """从古籍中抽取段落，长度按 AI 样本的长度分布截取（在句末截断），避免"长度"本身成为区分线索。
+    SPLIT_BOOKS 里的书只取 half 指定的那一半篇目（评估默认用 eval 一半，训练文言分类器用 train 一半）。"""
     rnd = random.Random(seed)
     per_book = max(3, n // len(books) + 2)
     pool = []
     for b in books:
-        files = glob.glob(os.path.join(root, "古文原文", b, "**", "text.txt"), recursive=True)
+        files = sorted(glob.glob(os.path.join(root, "古文原文", b, "**", "text.txt"), recursive=True))
+        if b in SPLIT_BOOKS:
+            files = [f for f in files if file_half(f) == half]
         rnd.shuffle(files)
         got = 0
         for f in files:

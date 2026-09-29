@@ -127,7 +127,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release download classical-classifier-v2 -p classical-classifier.tar.gz -D /tmp -R "${{ github.repository }}"; then
+          if gh release download classical-classifier-v3 -p classical-classifier.tar.gz -D /tmp -R "${{ github.repository }}"; then
             tar xzf /tmp/classical-classifier.tar.gz -C /tmp
             echo "CLASSICAL_CLASSIFIER_MODEL=/tmp/classical-classifier" >> "$GITHUB_ENV"
           fi

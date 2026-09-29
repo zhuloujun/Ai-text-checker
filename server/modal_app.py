@@ -20,7 +20,7 @@ EN_CLASSIFIER_MODEL = "desklib/ai-text-detector-v1.01"   # 英文分类器（DeB
 POETRY_LOCAL = Path(__file__).resolve().parent / "poetry-classifier"
 POETRY_DIR = "/models/poetry-classifier"
 HAS_POETRY = (POETRY_LOCAL / "config.json").exists()
-# 文言专用分类器（tools/train_classical.py 训练，Release classical-classifier-v2）：部署工作流按需下载到 server/classical-classifier
+# 文言专用分类器（tools/train_classical.py 训练，Release classical-classifier-v3）：部署工作流按需下载到 server/classical-classifier
 CLASSICAL_LOCAL = Path(__file__).resolve().parent / "classical-classifier"
 CLASSICAL_DIR = "/models/classical-classifier"
 HAS_CLASSICAL = (CLASSICAL_LOCAL / "config.json").exists()

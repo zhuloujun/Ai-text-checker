@@ -47,6 +47,35 @@ def ai_rows():
     return rows
 
 
+LONG_CHECK_BOOKS = ["聊斋志异", "唐传奇", "阅微草堂笔记", "太平广记", "搜神记", "剪灯新话", "资治通鉴", "世说新语"]
+
+
+def long_passages(root, per_book=40):
+    """专门检查"会不会冤枉真人志怪传奇"：从这些书（《聊斋》《唐传奇》只取评估那一半篇目）截 120–220 字的连续段落。
+    这些段落都没有参与训练；比按 AI 长度截取的短段更接近用户实际粘贴的文字。"""
+    import glob
+    import re
+    rnd = random.Random(7)
+    out = []
+    for b in LONG_CHECK_BOOKS:
+        files = sorted(glob.glob(os.path.join(root, "古文原文", b, "**", "text.txt"), recursive=True))
+        if b in ev.SPLIT_BOOKS:
+            files = [f for f in files if ev.file_half(f) == "eval"]
+        rnd.shuffle(files)
+        got = 0
+        for f in files:
+            t = "".join(l.strip() for l in Path(f).read_text("utf-8", errors="ignore").splitlines())
+            t = re.sub(r"（出《[^》]*》）|\(出《[^》]*》\)", "", t)
+            if len(t) < 160:
+                continue
+            st = rnd.randint(0, max(0, len(t) - 220))
+            out.append({"text": t[st:st + rnd.randint(120, 220)], "y": 0, "model": b})
+            got += 1
+            if got >= per_book:
+                break
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--classical-dir", required=True)
@@ -58,6 +87,7 @@ def main():
     ap.add_argument("--max-len", type=int, default=256)
     ap.add_argument("--n-human-train", type=int, default=900)
     ap.add_argument("--n-human-test", type=int, default=400)
+    ap.add_argument("--n-split-train", type=int, default=400, help="《聊斋志异》《唐传奇》训练一半篇目中取多少段")
     ap.add_argument("--time-budget-min", type=float, default=240)
     args = ap.parse_args()
 
@@ -74,9 +104,15 @@ def main():
     ai_test = [r for r in ai if r["split"] == "test"]
     lengths = [len(r["text"]) for r in ai]
     h_train = ev.classical_passages(args.classical_dir, TRAIN_BOOKS, args.n_human_train, 31, lengths)
+    # AI 最常模仿《聊斋志异》《唐传奇》：用它们一半的篇目作人写训练样本（另一半只用于评估），
+    # 否则模型会把"聊斋风格"本身当成 AI 特征（第二版在较长的聊斋原文上误判约 40%）
+    h_train += ev.classical_passages(args.classical_dir, sorted(ev.SPLIT_BOOKS), args.n_split_train, 33,
+                                     lengths + [180] * len(lengths), half="train")
     h_test = ev.classical_passages(args.classical_dir, ev.CLASSICAL_TEST_BOOKS, args.n_human_test, 32, lengths)
+    long_test = long_passages(args.classical_dir)
     h_train = [dict(r, text=normalize_classical(r["text"])) for r in h_train]
     h_test = [dict(r, text=normalize_classical(r["text"])) for r in h_test]
+    long_test = [dict(r, text=normalize_classical(r["text"])) for r in long_test]
     if len(h_train) < 60 or len(h_test) < 30:
         raise SystemExit(f"人写古籍段落太少（训练 {len(h_train)} / 评估 {len(h_test)}），请检查数据下载")
 
@@ -155,10 +191,16 @@ def main():
         by_book.setdefault(r["model"], []).append(p)
     # 固定一个"人写误判约 5%"的参考阈值，报告每个来源的检出率 / 每部书的误判率
     thr = sorted(ph)[int(len(ph) * 0.95)] if ph else 0.5
+    pl = predict(long_test)
+    by_long = {}
+    for p, r in zip(pl, long_test):
+        by_long.setdefault(r["model"], []).append(p)
     res = {"dev_auroc": round(best, 4), "test_auroc": round(auroc(pa, ph), 4),
            "test_auroc_by_ai_source": {m: round(auroc(v, ph), 4) for m, v in by_ai.items()},
            "reference_threshold_at_5pct_fpr": round(thr, 4),
            "ai_caught_at_ref_threshold": {m: round(sum(x >= thr for x in v) / len(v), 3) for m, v in by_ai.items()},
+           "long_passages_flagged_at_ref_threshold": {b: round(sum(x >= thr for x in v) / len(v), 3) for b, v in by_long.items()},
+           "long_passages_flagged_at_0.5": {b: round(sum(x >= 0.5 for x in v) / len(v), 3) for b, v in by_long.items()},
            "human_flagged_by_book_at_ref_threshold": {b: round(sum(x >= thr for x in v) / len(v), 3)
                                                      for b, v in by_book.items() if len(v) >= 5},
            "n_train_human": len(h_train), "n_train_ai": len(ai_train), "n_test_human": len(ph), "n_test_ai": len(pa),
@@ -166,7 +208,8 @@ def main():
            "minutes": round((time.time() - t0) / 60, 1)}
     print(json.dumps(res, ensure_ascii=False, indent=1), flush=True)
     print("::notice title=文言分类器评估（没参与训练的古籍与 AI 样本）::" + json.dumps(
-        {k: res[k] for k in ("test_auroc", "test_auroc_by_ai_source", "ai_caught_at_ref_threshold")}, ensure_ascii=False), flush=True)
+        {k: res[k] for k in ("test_auroc", "test_auroc_by_ai_source", "ai_caught_at_ref_threshold",
+                             "long_passages_flagged_at_ref_threshold")}, ensure_ascii=False), flush=True)
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
