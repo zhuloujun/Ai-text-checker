@@ -52,7 +52,11 @@ PART_PROFILE = {
     "po_cal": "zh_poetry", "po_test": "zh_poetry", "po_story": "zh_poetry", "po_classic": "zh_poetry",
     "en_cal1": "en", "en_cal2": "en", "en_ood": "en", "en_para": "en",
     "cl_cal": "zh_classical", "cl_test": "zh_classical",
+    # 用户提供的国产新模型（DeepSeek / Kimi / 文心一言）AI 样本：每个模型 2/3 参与校准、1/3 留作评估
+    "cl_user": "zh_classical", "po_user": "zh_poetry", "en_user": "en",
 }
+USER_MODELS = {"deepseek": "DeepSeek", "kimi": "Kimi", "wenxin": "文心一言"}
+USER_PARTS = {"cl_user": "classical", "po_user": "poem", "en_user": "english"}
 PROFILE_PARTS = {
     "zh": {"fit": ["cal1", "cal2"],
            "eval": [("test", "NLPCC 测试集（训练时未见，含 DeepSeek-V3）"),
@@ -60,12 +64,15 @@ PROFILE_PARTS = {
     # 短段（不足 200 字）的信号分布与长段不同，单独校准、单独定阈值，否则短的人写段落误判偏多
     "zh_short": {"fit": ["cal1s", "cal2s"],
                  "eval": [("tests", "NLPCC 测试集截成 80–260 字的短段（含本仓库 AI 读后感 / 散文）")]},
-    "zh_poetry": {"fit": ["po_cal"], "eval": [("po_test", "ChangAn 保留集（另一批作者 + 没见过的 Kimi-K2 与其他模型的新诗词）"),
+    "zh_poetry": {"fit": ["po_cal", "po_user_fit"], "eval": [("po_user_test", "国产新模型 AI 诗词（DeepSeek / Kimi / 文心一言，未参与校准的 1/3）"),
+                                              ("po_test", "ChangAn 保留集（另一批作者 + 没见过的 Kimi-K2 与其他模型的新诗词）"),
                                               ("po_story", "复述故事情节的 AI 诗词（本仓库自带，40 首）"),
                                               ("po_classic", "唐诗三百首 + 宋词三百首（人写名篇，检查误判）")]},
-    "en": {"fit": ["en_cal1", "en_cal2"], "eval": [("en_ood", "MAGE：GPT-4 在未见过的领域生成的文本"),
+    "en": {"fit": ["en_cal1", "en_cal2", "en_user_fit"], "eval": [("en_user_test", "国产新模型 AI 英文短篇（DeepSeek / Kimi / 文心一言，未参与校准的 1/3）"),
+                                                  ("en_ood", "MAGE：GPT-4 在未见过的领域生成的文本"),
                                                   ("en_para", "MAGE：GPT-4 文本经改写后（含本仓库英文 AI 样本）")]},
-    "zh_classical": {"fit": ["cl_cal"], "eval": [("cl_test", "文言保留集（另一组古籍 + 未参与校准的 AI 文言）")]},
+    "zh_classical": {"fit": ["cl_cal", "cl_user_fit"], "eval": [("cl_test", "文言保留集（另一组古籍 + 未参与校准的 AI 文言）"),
+                                                                ("cl_user_test", "国产新模型 AI 文言故事（DeepSeek / Kimi / 文心一言，未参与校准的 1/3）")]},
 }
 PROFILE_SOURCE = {
     "zh": "NLPCC 2025 Task 1（CSL 学术摘要 / 新闻 / 作文；GPT-4o、GLM-4、Qwen）",
@@ -313,7 +320,28 @@ def classical_parts(args):
     return {"cl_cal": h_cal + conv(ai_cal), "cl_test": h_test + conv(ai_test)}
 
 
+def user_ai_rows(kind):
+    """用户提供的各模型 AI 样本；每个模型内按顺序每 3 篇取 1 篇留作评估，其余参与校准。"""
+    rows = []
+    for m in USER_MODELS:
+        f = DATA_DIR / f"ai_user_{kind}_{m}.txt"
+        if f.exists():
+            for i, t in enumerate(read_blocks(f)):
+                rows.append({"text": t, "y": 1, "model": f"repo-ai-{m}", "split": "test" if i % 3 == 2 else "fit"})
+    return rows
+
+
+def split_user_parts(parts):
+    for base in USER_PARTS:
+        rows = parts.get(base)
+        if rows:
+            parts[base + "_fit"] = [r for r in rows if r.get("split") == "fit"]
+            parts[base + "_test"] = [r for r in rows if r.get("split") == "test"]
+
+
 def build_part(args, part):
+    if part in USER_PARTS:
+        return user_ai_rows(USER_PARTS[part])
     prof = PART_PROFILE[part]
     if part in ("cal1s", "cal2s", "tests"):
         return zh_short_parts(args)[part]
@@ -348,7 +376,7 @@ def stage_score(args):
         if r["y"] == 1 and r.get("model", "").startswith("repo-ai"):
             min_len = 20      # 本仓库自带的 AI 样本全部保留
         if sg and len(sg) >= min_len:
-            segs.append(sg); labels.append(r["y"]); meta.append(r.get("model") or "")
+            segs.append(sg); labels.append(r["y"]); meta.append((r.get("model") or "", r.get("split")))
     print(f"[{args.part}] 文体 {prof}，打分 {len(segs)} 段（人写 {labels.count(0)} / AI {labels.count(1)}）…", flush=True)
     t = time.time(); last = [0.0]
 
@@ -359,8 +387,9 @@ def stage_score(args):
     if not segs:
         raise SystemExit(f"[{args.part}] 没有可打分的样本（原始 {len(rows)} 条），请检查数据下载与读取")
     sc = engine.raw_scores(segs, prog, [prof] * len(segs))
-    out = [{"y": l, "model": m, "chars": len(x_text), "s": {k: v for k, v in x.items() if isinstance(v, (int, float))}}
-           for x, l, m, x_text in zip(sc, labels, meta, segs)]
+    out = [{"y": l, "model": m, "chars": len(x_text), "s": {k: v for k, v in x.items() if isinstance(v, (int, float))},
+            **({"split": sp} if sp else {})}
+           for x, l, (m, sp), x_text in zip(sc, labels, meta, segs)]
     d = Path(args.scores_dir); d.mkdir(parents=True, exist_ok=True)
     (d / f"{args.part}.json").write_text(json.dumps(out, ensure_ascii=False), "utf-8")
     print(f"::notice title=打分完成 {args.part}::{len(out)} 段，用时 {time.time()-t:.0f} 秒", flush=True)
@@ -469,6 +498,10 @@ def fit_poetry(parts, target_fpr, hs, as_):
         "ChangAn AI vs 唐宋名篇": ([r for r in test if r["y"] == 1], classic),
         "故事诗 vs 唐宋名篇": (story, classic),
     }
+    user_test = parts.get("po_user_test", [])
+    if user_test:
+        comparisons["国产新模型诗 vs 当代人写"] = (user_test, [r for r in test if r["y"] == 0])
+        comparisons["国产新模型诗 vs 唐宋名篇"] = (user_test, classic)
     table, fitted = {}, {}
     for name, feats in POETRY_VARIANTS.items():
         rows_ok = all(any(scoring.feature_value(r, f) is not None for r in hs) for f in feats)
@@ -519,6 +552,7 @@ def stage_fit(args):
         f = d / f"{name}.json"
         if f.exists():
             parts[name] = json.loads(f.read_text("utf-8"))
+    split_user_parts(parts)
     fitted = {}
     for prof in ("zh", "zh_short", "en", "zh_classical", "zh_poetry"):
         r = fit_profile(prof, parts, args.target_fpr)

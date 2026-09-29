@@ -41,7 +41,7 @@ env:
   N_CL_HUMAN_TEST: "160"
   N_PO_CAL: "800"
   N_PO_TEST: "600"
-  PUSH_PARTS: '["po_cal","po_test","po_story","po_classic"]'
+  PUSH_PARTS: '["cl_user","po_user","en_user"]'
 
 jobs:
   plan:
@@ -52,7 +52,7 @@ jobs:
       - id: p
         run: |
           if [ "${{ github.event.inputs.include_zh }}" = "true" ]; then
-            echo 'parts=["cal1","cal2","test","csl","cal1s","cal2s","tests","en_cal1","en_cal2","en_ood","en_para","cl_cal","cl_test","po_cal","po_test","po_story","po_classic"]' >> "$GITHUB_OUTPUT"
+            echo 'parts=["cal1","cal2","test","csl","cal1s","cal2s","tests","en_cal1","en_cal2","en_ood","en_para","cl_cal","cl_test","po_cal","po_test","po_story","po_classic","cl_user","po_user","en_user"]' >> "$GITHUB_OUTPUT"
           else
             echo "parts=$PUSH_PARTS" >> "$GITHUB_OUTPUT"
           fi
