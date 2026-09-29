@@ -276,11 +276,28 @@ class Engine:
                   for s in segs}
         # 2) 与相邻正文段落平滑：只在同一篇作品、同一文体的正文段落之间进行（标题行分开的作品互不影响）
         smoothed = {}
+        segs_by_idx = {s.index: s for s in segs}
         groups: dict = {}
         for s in counted:
             groups.setdefault((s.block, s.register), []).append(s.index)
         for idxs in groups.values():
             smoothed.update(zip(idxs, scoring.smooth([combos[i]["prob"] for i in idxs], config.SMOOTHING)))
+
+        # 3) 整篇一致性（参考 Turnitin / 知网按“整篇作品”给结论的做法）：AI 文章通常整篇一次生成。
+        #    同一篇作品（同一标题下、同一文体）里，已判为疑似 AI 的文字占多数时，
+        #    本篇中“接近阈值”的段落也按轻度疑似计入，并注明原因。只会把接近阈值的段落往上拉，
+        #    不会影响整体判为人写的作品。
+        work_ai = set()
+        for (blk, reg), idxs in groups.items():
+            if len(idxs) < 3:
+                continue
+            thr_g = {i: float(prof[i][0].get("threshold", 0.5)) for i in idxs}
+            tot = sum(len(segs_by_idx[i].text) for i in idxs if smoothed.get(i) is not None)
+            hit = sum(len(segs_by_idx[i].text) for i in idxs
+                      if smoothed.get(i) is not None and smoothed[i] >= thr_g[i])
+            if tot and hit >= config.WORK_MAJORITY * tot:
+                work_ai.update(i for i in idxs if smoothed.get(i) is not None
+                               and thr_g[i] - scoring.NEAR_MARGIN <= smoothed[i] < thr_g[i])
 
         seg_out, counted_chars, prob_weighted = [], 0, 0.0
         chars_by_level = {"high": 0, "mid": 0, "light": 0, "low": 0}
@@ -296,6 +313,9 @@ class Engine:
             prob = smoothed.get(s.index) if s.counted else None
             level, label = scoring.level_of(prob, thr) if s.counted else ("none", "")
             near = bool(s.counted and prob is not None and thr - scoring.NEAR_MARGIN <= prob < thr)
+            by_work = s.index in work_ai
+            if by_work:
+                level, label, near = "light", "轻度疑似（整篇判断）", False
             if s.counted and prob is not None:
                 counted_chars += len(s.text)
                 prob_weighted += prob * len(s.text)
@@ -314,7 +334,7 @@ class Engine:
                 "prob": None if prob is None else round(prob, 4),
                 "ref_prob": (None if s.counted or comb["prob"] is None else round(comb["prob"], 4)),
                 "prob_unsmoothed": None if comb["prob"] is None else round(comb["prob"], 4),
-                "level": level, "label": label, "near_threshold": near,
+                "level": level, "label": label, "near_threshold": near, "by_work": by_work,
                 "memorized": s.index in memo,
                 "short": is_short(s, score_text(s)),
                 "signals": {k: (None if v is None else round(v, 4)) for k, v in comb["signals"].items()},
@@ -359,6 +379,9 @@ class Engine:
         if n_short:
             notes.append(f"有 {n_short} 段篇幅较短（中文不足 {config.SHORT_CHARS_ZH} 字 / 英文不足 {config.SHORT_WORDS_EN} 词），"
                          "已标“篇幅短”，这些段落的结果波动较大。")
+        if work_ai:
+            notes.append(f"有 {len(work_ai)} 段 AI 概率接近阈值，但所在作品的大部分段落已判为疑似 AI，"
+                         "按整篇判断计为“轻度疑似（整篇判断）”（AI 文章通常整篇生成）。")
         if near_chars and counted_chars:
             notes.append(f"另有 {near_chars / counted_chars:.0%} 的文字 AI 概率接近阈值（已标“接近阈值”，未计入 AI 率），"
                          "可重点复核；AI 翻译、经过改写或人工润色的 AI 文字常落在这一区间。")

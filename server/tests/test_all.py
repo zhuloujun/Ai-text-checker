@@ -523,3 +523,28 @@ def test_default_calibration_profiles_name_the_deployed_models():
     for prof, model in expect.items():
         if prof in cal.get("profiles", {}):
             assert cal["profiles"][prof]["models"]["classifier"] == model, prof
+
+
+def test_work_level_consistency(client, monkeypatch):
+    """同一篇作品大部分段落已判为 AI 时，接近阈值的段落按整篇计入；多数为人写时不受影响。"""
+    from app import config
+    h = {"Authorization": "Bearer " + issue(client)}
+    paras = [MODERN.replace("宋代", f"第{i}段宋代") * 2 for i in range(4)]
+    text = "《测试文章》\n\n" + "\n\n".join(paras)
+    monkeypatch.setattr(config, "SMOOTHING", 0.0)
+    monkeypatch.setattr(scoring, "profile_for", lambda cal, reg: ({"threshold": 0.5}, True))
+
+    def run(probs):
+        it = iter(probs)
+        monkeypatch.setattr(scoring, "combine", lambda r, c: {"prob": next(it, 0.1), "signals": {}})
+        return client.post("/v1/detect", json={"text": text}, headers=h).json()["result"]
+
+    res = run([0.9, 0.9, 0.9, 0.42])
+    body = [s for s in res["segments"] if s["prob"] is not None]
+    assert len(body) == 4, [s["text"][:10] for s in res["segments"]]
+    assert body[-1]["by_work"] and body[-1]["level"] == "light" and not body[-1]["near_threshold"]
+    assert res["summary"]["ai_rate"] == 1.0
+
+    res = run([0.1, 0.1, 0.9, 0.42])
+    body = [s for s in res["segments"] if s["prob"] is not None]
+    assert not body[-1]["by_work"] and body[-1]["near_threshold"] and body[-1]["level"] == "low"

@@ -359,6 +359,7 @@ function renderResult(res){
         <div class="para-tags">
           ${seg.label ? `<span class="para-tag strong">${seg.label}</span>` : ''}
           ${seg.near_threshold ? '<span class="para-tag" title="低于判定阈值，但相差不大，未计入 AI 率">接近阈值</span>' : ''}
+          ${seg.by_work ? '<span class="para-tag" title="本段略低于阈值，但同一篇作品的大部分段落已判为疑似 AI，按整篇判断计入">整篇判断</span>' : ''}
           ${seg.memorized ? '<span class="para-tag" title="语言模型几乎能逐字复现、而分类器判为人写：多半是公开名篇，已不采信语言模型信号">疑似名篇原文</span>' : ''}
           ${seg.short ? '<span class="para-tag" title="篇幅短，结果波动较大">篇幅短</span>' : ''}
           ${kindTag}${sig}
