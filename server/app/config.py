@@ -62,6 +62,8 @@ SHORT_CHARS_ZH = _int("SHORT_CHARS_ZH", 100)
 SHORT_WORDS_EN = _int("SHORT_WORDS_EN", 150)
 # "疑似名篇"判定：语言模型困惑度低于此值且分类器判为人写
 MEMORIZED_PPL = float(os.getenv("MEMORIZED_PPL", "3.5") or 3.5)
+# 管理页校准时，用户样本与内置公开数据合并，用户样本合计所占的权重比例
+USER_SAMPLE_SHARE = float(os.getenv("USER_SAMPLE_SHARE", "0.3") or 0.3)
 FAST_MODE_MAX_SEGMENTS = _int("FAST_MODE_MAX_SEGMENTS", 60)  # 快速模式下语言模型最多检测多少段
 # 相邻段落平滑强度（0 = 不平滑，0.3 = 本段 70% + 相邻段 30%）
 SMOOTHING = float(os.getenv("SMOOTHING", "0.3") or 0.3)

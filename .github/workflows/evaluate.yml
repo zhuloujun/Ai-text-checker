@@ -167,10 +167,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # 先把结果放到一边，基于最新的 main 再提交，避免与期间的其他提交冲突
-          mkdir -p /tmp/result && cp -r server/app/default_calibration.json server/tools/EVAL_REPORT.md server/tools/eval_result.json server/tools/scores /tmp/result/
+          mkdir -p /tmp/result && cp -r server/app/default_calibration.json server/app/calib_data server/tools/EVAL_REPORT.md server/tools/eval_result.json server/tools/scores /tmp/result/
           git fetch origin main && git reset --hard origin/main
           cp /tmp/result/default_calibration.json server/app/ && cp /tmp/result/EVAL_REPORT.md /tmp/result/eval_result.json server/tools/
           mkdir -p server/tools/scores && cp /tmp/result/scores/*.json server/tools/scores/
-          git add server/app/default_calibration.json server/tools/EVAL_REPORT.md server/tools/eval_result.json server/tools/scores
+          mkdir -p server/app/calib_data && cp /tmp/result/calib_data/*.json server/app/calib_data/
+          git add server/app/default_calibration.json server/app/calib_data server/tools/EVAL_REPORT.md server/tools/eval_result.json server/tools/scores
           git commit -m "Update default calibration (modern Chinese, English, classical Chinese, poetry)" || exit 0
           git push origin HEAD:main

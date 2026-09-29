@@ -347,6 +347,11 @@ class Engine:
                          "请把文言部分的结果当作线索而非结论。")
         if main_reg == "zh" and str(cal.get("source", "")).startswith("NLPCC") and cal.get("calibrated"):
             notes.append("使用的是内置默认校准（公开数据集：学术摘要、新闻、作文）；用你自己的文字在管理页校准后会更贴合你的文风。")
+        n_refonly = sum(1 for s in segs if s.kind == "reference_only")
+        if n_refonly:
+            notes.append(f"{n_refonly} 段诗词只给参考值、不计入 AI 率：评估发现诗词检测在不同来源之间很不稳定——"
+                         "唐诗宋词名篇会被误判（约 19%），复述故事情节的 AI 诗又几乎认不出。"
+                         "如需让诗词计入，可在管理页用你自己标注的诗词校准。")
         if memo:
             notes.append(f"有 {len(memo)} 段文字语言模型几乎能逐字复现、而分类器判为人写，疑为公开名篇原文"
                          "（如经典诗文、名人演讲）；这些段落不采信语言模型信号，只按分类器判断。")
@@ -505,8 +510,23 @@ class JobQueue:
                 job["progress"] = 1.0 if job["status"] == "done" else job["progress"]
 
 
+def load_builtin_calib(profile: str) -> list[dict]:
+    """随代码发布的内置校准数据（公开数据集的原始分数），见 tools/evaluate.py 的 write_calib_data。"""
+    import json
+    from pathlib import Path
+    f = Path(__file__).resolve().parent / "calib_data" / f"{profile}.json"
+    if not f.exists():
+        return []
+    try:
+        return json.loads(f.read_text("utf-8"))
+    except (OSError, ValueError):
+        return []
+
+
 def run_calibration(engine: Engine, p: dict, progress=None) -> dict:
-    """用管理员提供的样本校准某一文体。profile=auto 时按样本中字数最多的文体确定。"""
+    """用管理员提供的样本校准某一文体。profile=auto 时按样本中字数最多的文体确定。
+    include_builtin=True（默认）时与内置公开数据合并：用户样本合计占约 30% 的权重，
+    这样即使只标了几段（甚至只标了 AI 一类），也能在不破坏整体效果的前提下向你的文字偏移。"""
     engine.wait_loaded()
 
     def to_segments(texts):
@@ -526,8 +546,8 @@ def run_calibration(engine: Engine, p: dict, progress=None) -> dict:
             by[s.register] = by.get(s.register, 0) + len(s.text)
         profile = max(by, key=by.get) if by else "zh"
     skipped = sum(1 for s in human + ai if s.register != profile)
-    human = [s.text for s in human if s.register == profile]
-    ai = [s.text for s in ai if s.register == profile]
+    human = [score_text(s) for s in human if s.register == profile]
+    ai = [score_text(s) for s in ai if s.register == profile]
     total = len(human) + len(ai)
     done = [0]
 
@@ -536,14 +556,39 @@ def run_calibration(engine: Engine, p: dict, progress=None) -> dict:
         if progress:
             progress(done[0], total)
 
-    hs = engine.raw_scores(human, prog, [profile] * len(human))
-    as_ = engine.raw_scores(ai, prog, [profile] * len(ai))
-    res = scoring.calibrate(hs, as_, float(p.get("target_fpr", 0.05)), features=scoring.PROFILE_FEATURES.get(profile))
+    hs = engine.raw_scores(human, prog, [profile] * len(human)) if human else []
+    as_ = engine.raw_scores(ai, prog, [profile] * len(ai)) if ai else []
+    include_builtin = p.get("include_builtin", True)
+    builtin = load_builtin_calib(profile) if include_builtin else []
+    n_user = len(hs) + len(as_)
+    if builtin and n_user:
+        w_user = max(1.0, config.USER_SAMPLE_SHARE * len(builtin) / ((1 - config.USER_SAMPLE_SHARE) * n_user))
+        bh = [r["s"] for r in builtin if r["y"] == 0]
+        ba = [r["s"] for r in builtin if r["y"] == 1]
+        H, A = bh + hs, ba + as_
+        hw, aw = [1.0] * len(bh) + [w_user] * len(hs), [1.0] * len(ba) + [w_user] * len(as_)
+        hu, au = [False] * len(bh) + [True] * len(hs), [False] * len(ba) + [True] * len(as_)
+    else:
+        H, A, hw, aw, hu, au = hs, as_, None, None, None, None
+    # 沿用当前这一文体使用的特征组合（诗词、英文等都是评估后选定的）
+    cur = scoring.profile_for(engine.cal, profile)[0]
+    feats = (cur.get("lr") or {}).get("features") or scoring.PROFILE_FEATURES.get(profile)
+    res = scoring.calibrate(H, A, float(p.get("target_fpr", 0.05)), features=feats,
+                            human_w=hw, ai_w=aw, human_user=hu, ai_user=au)
     res["calibration"]["models"] = {"observer": config.OBSERVER_MODEL, "performer": config.PERFORMER_MODEL,
                                     "classifier": config.classifier_for(profile)}
     res["calibration"]["profile"] = profile
-    res["calibration"]["note"] = (f"{REGISTER_NAMES.get(profile, profile)}：" + res["calibration"].get("note", ""))
+    # 内置评估认定"不够稳定、只作参考"的文体（目前是诗词），除非管理员明确要求，否则保持只作参考
+    if cur.get("reference_only") and not p.get("count_in_rate"):
+        res["calibration"]["reference_only"] = True
+    note = f"{REGISTER_NAMES.get(profile, profile)}：用你的 {len(hs)} 段人写、{len(as_)} 段 AI 样本校准"
+    if builtin and n_user:
+        note += f"（并合并内置公开数据 {len(builtin)} 段，你的样本约占 {config.USER_SAMPLE_SHARE:.0%} 权重）"
+    res["calibration"]["note"] = note + "。"
     res["report"]["profile"] = profile
     res["report"]["profile_name"] = REGISTER_NAMES.get(profile, profile)
     res["report"]["skipped_other_register_segments"] = skipped
+    res["report"]["builtin_samples"] = len(builtin) if (builtin and n_user) else 0
+    res["report"]["user_human"] = len(hs)
+    res["report"]["user_ai"] = len(as_)
     return res

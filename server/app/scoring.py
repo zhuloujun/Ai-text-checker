@@ -107,17 +107,19 @@ def _auroc(pos: list[float], neg: list[float]) -> float | None:
     return wins / (len(pos) * len(neg))
 
 
-def _fit_logreg(X: list[list[float]], y: list[int], l2: float = 1.0, iters: int = 200):
+def _fit_logreg(X: list[list[float]], y: list[int], l2: float = 1.0, iters: int = 200, weights=None):
     """小规模逻辑回归（牛顿法 + L2），不依赖 sklearn。两类样本数不同时按类别加权（各占一半权重），
-    避免样本多的一类把概率整体拉偏。"""
+    避免样本多的一类把概率整体拉偏。weights：每个样本的额外权重（用户标注的样本权重更高）。"""
     import numpy as np
 
     Xa = np.asarray(X, dtype=float)
     ya = np.asarray(y, dtype=float)
     n, d = Xa.shape
-    n1 = max(ya.sum(), 1.0)
-    n0 = max(n - ya.sum(), 1.0)
-    sw = np.where(ya == 1, n / (2 * n1), n / (2 * n0))
+    wa = np.ones(n) if weights is None else np.asarray(weights, dtype=float)
+    n1 = max((wa * ya).sum(), 1e-9)
+    n0 = max((wa * (1 - ya)).sum(), 1e-9)
+    tot = wa.sum()
+    sw = wa * np.where(ya == 1, tot / (2 * n1), tot / (2 * n0))
     Xb = np.hstack([Xa, np.ones((n, 1))])
     w = np.zeros(d + 1)
     reg = np.eye(d + 1) * l2
@@ -133,8 +135,15 @@ def _fit_logreg(X: list[list[float]], y: list[int], l2: float = 1.0, iters: int 
     return w[:-1].tolist(), float(w[-1])
 
 
-def calibrate(human: list[dict], ai: list[dict], target_fpr: float = 0.05, features: list | None = None) -> dict:
-    """human / ai：每个元素是一段文字的原始分数字典。返回新的校准 JSON 和评估指标。"""
+def calibrate(human: list[dict], ai: list[dict], target_fpr: float = 0.05, features: list | None = None,
+              human_w: list | None = None, ai_w: list | None = None,
+              human_user: list | None = None, ai_user: list | None = None) -> dict:
+    """human / ai：每个元素是一段文字的原始分数字典。返回新的校准 JSON 和评估指标。
+    human_w / ai_w：各样本权重；human_user / ai_user：是否为用户自己标注的样本（单独报告这部分的效果）。"""
+    human_w = human_w or [1.0] * len(human)
+    ai_w = ai_w or [1.0] * len(ai)
+    human_user = human_user or [False] * len(human)
+    ai_user = ai_user or [False] * len(ai)
     if len(human) < 5 or len(ai) < 5:
         raise ValueError(f"有效样本不足：人写 {len(human)} 段、AI {len(ai)} 段，每类至少需要 5 段（建议各 30 段以上）。"
                          "注意：参考文献和以引文为主的段落不参与校准；每段至少约 80 字。")
@@ -162,6 +171,8 @@ def calibrate(human: list[dict], ai: list[dict], target_fpr: float = 0.05, featu
     n_each = min(len(human), len(ai))
     candidates = list(features) if features else (EXTENDED_FEATURES if n_each >= 30 else BASE_FEATURES)
     all_rows = [(features_of(s, candidates), 0) for s in human] + [(features_of(s, candidates), 1) for s in ai]
+    all_w = list(human_w) + list(ai_w)
+    all_u = list(human_user) + list(ai_user)
     # 丢掉缺失太多的特征（例如没有语言模型时的那些）
     names = [n for j, n in enumerate(candidates)
              if sum(r[j] is not None for r, _ in all_rows) >= 0.9 * len(all_rows)]
@@ -173,11 +184,12 @@ def calibrate(human: list[dict], ai: list[dict], target_fpr: float = 0.05, featu
             if au is not None:
                 report["auroc"][n] = round(max(au, 1 - au), 4)
     idx = [candidates.index(n) for n in names]
-    X, ys = [], []
-    for r, y in all_rows:
+    X, ys, ws, us = [], [], [], []
+    for (r, y), w_, u_ in zip(all_rows, all_w, all_u):
         vals = [r[j] for j in idx]
         if sum(v is None for v in vals) <= 1:
-            X.append(vals); ys.append(y)
+            X.append(vals); ys.append(y); ws.append(w_); us.append(u_)
+    hw, uw = None, None
     if names and len(X) >= 10 and len(set(ys)) == 2:
         Xa = np.array([[np.nan if v is None else v for v in row] for row in X], dtype=float)
         mean = np.nanmean(Xa, 0)
@@ -186,7 +198,9 @@ def calibrate(human: list[dict], ai: list[dict], target_fpr: float = 0.05, featu
         Z = (Xa - mean) / std
         ya = np.asarray(ys)
         l2 = 1.0 if len(names) <= 3 else 3.0
-        w, b = _fit_logreg(Z.tolist(), ys, l2=l2)
+        wa_ = np.asarray(ws, dtype=float)
+        ua_ = np.asarray(us, dtype=bool)
+        w, b = _fit_logreg(Z.tolist(), ys, l2=l2, weights=wa_)
         cal["lr"] = {"w": w, "b": b, "mean": mean.tolist(), "std": std.tolist(), "features": names}
         report["features_used"] = names
         # 5 折交叉验证：用"没见过的样本"上的预测来评估和选阈值，避免过于乐观
@@ -199,13 +213,17 @@ def calibrate(human: list[dict], ai: list[dict], target_fpr: float = 0.05, featu
                 tr = np.setdiff1d(order, f)
                 if len(set(ya[tr])) < 2:
                     continue
-                wf, bf = _fit_logreg(Z[tr].tolist(), ya[tr].tolist(), l2=l2)
+                wf, bf = _fit_logreg(Z[tr].tolist(), ya[tr].tolist(), l2=l2, weights=wa_[tr])
                 oof[f] = 1 / (1 + np.exp(-(Z[f] @ np.asarray(wf) + bf)))
         cv_ok = not np.isnan(oof).any()
         report["cross_validated"] = bool(cv_ok)
         if cv_ok:
             hp = sorted(oof[ya == 0].tolist())
             ap = oof[ya == 1].tolist()
+            order_h = np.argsort(oof[ya == 0])
+            hw = wa_[ya == 0][order_h].tolist()
+            if ua_.any():
+                uw = {"human": oof[(ya == 0) & ua_].tolist(), "ai": oof[(ya == 1) & ua_].tolist()}
         else:
             hp = sorted(combine(s, cal)["prob"] for s in human if combine(s, cal)["prob"] is not None)
             ap = [combine(s, cal)["prob"] for s in ai if combine(s, cal)["prob"] is not None]
@@ -214,7 +232,16 @@ def calibrate(human: list[dict], ai: list[dict], target_fpr: float = 0.05, featu
         ap = [p for p in (combine(s, cal)["prob"] for s in ai) if p is not None]
 
     # 3) 阈值：让人写文本的误判率不超过 target_fpr
-    if hp:
+    if hp and hw and len(set(hw)) > 1:
+        # 加权：从高往低累加人写样本的权重，超过目标误判率之前的最低概率即阈值
+        total_w = sum(hw)
+        acc, thr = 0.0, 0.5
+        for p_, w_ in sorted(zip(hp, hw), reverse=True):
+            if (acc + w_) / total_w > target_fpr:
+                thr = max(0.5, p_ + 1e-6)
+                break
+            acc += w_
+    elif hp:
         k = min(len(hp) - 1, max(0, math.ceil(len(hp) * (1 - target_fpr)) - 1))
         thr = max(0.5, hp[k] + 1e-6)
     else:
@@ -226,6 +253,13 @@ def calibrate(human: list[dict], ai: list[dict], target_fpr: float = 0.05, featu
     report["threshold"] = cal["threshold"]
     report["human_flagged_rate"] = None if fpr is None else round(fpr, 4)
     report["ai_caught_rate"] = None if tpr is None else round(tpr, 4)
+    if uw:
+        t_ = cal["threshold"]
+        report["user_samples"] = {
+            "n_human": len(uw["human"]), "n_ai": len(uw["ai"]),
+            "ai_caught_rate": round(sum(p >= t_ for p in uw["ai"]) / len(uw["ai"]), 4) if uw["ai"] else None,
+            "human_flagged_rate": round(sum(p >= t_ for p in uw["human"]) / len(uw["human"]), 4) if uw["human"] else None,
+        }
     report["note"] = ("以上指标" + ("用 5 折交叉验证（每次用没参与拟合的样本）算出" if report.get("cross_validated") else "是在校准样本上直接算出的，可能偏乐观")
                       + "；样本越多、越接近你要检测的文本，越可信。")
     cal["calibrated"] = True

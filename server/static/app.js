@@ -365,11 +365,53 @@ function renderResult(res){
           <span class="para-tag">第 ${seg.index+1} 段 · ${REG_NAME[seg.register] || '现代汉语'} · ${seg.chars} 字</span>
         </div>
         ${rawBits ? `<details class="para-raw"><summary>原始分数</summary><p>${escapeHtml(rawBits)}</p></details>` : ''}
+        ${seg.kind !== 'reference' ? `<div class="para-label" data-key="${labelKey(seg.text)}">标注：
+          <button type="button" data-lab="ai">这段是 AI</button><button type="button" data-lab="human">这段是人写</button></div>` : ''}
       </div>`;
+    const lb = div.querySelector('.para-label');
+    if(lb){
+      paintLabel(lb);
+      lb.addEventListener('click', (e)=>{
+        const b = e.target.closest('button'); if(!b) return;
+        setLabel(seg, b.dataset.lab);
+        paintLabel(lb);
+      });
+    }
     paragraphList.appendChild(div);
   });
   applyFilter();
 }
+
+/* ---------------- 段落标注（只存在本浏览器，供管理页校准导入） ---------------- */
+const LABEL_KEY = 'shendu_labels';
+function labelKey(text){
+  let h = 5381; for(let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) >>> 0;
+  return 'k' + h.toString(36) + '_' + text.length;
+}
+function loadLabels(){ try{ return JSON.parse(localStorage.getItem(LABEL_KEY) || '{}'); }catch(e){ return {}; } }
+function saveLabels(m){ try{ localStorage.setItem(LABEL_KEY, JSON.stringify(m)); }catch(e){} updateLabelCount(); }
+function setLabel(seg, lab){
+  const m = loadLabels(), k = labelKey(seg.text);
+  if(m[k] && m[k].label === lab) delete m[k];            // 再点一次取消
+  else m[k] = { text: seg.text, register: seg.register || 'zh', label: lab, source: currentSource, ts: Date.now() };
+  saveLabels(m);
+}
+function paintLabel(el){
+  const cur = (loadLabels()[el.dataset.key] || {}).label;
+  el.querySelectorAll('button').forEach(b=> b.classList.toggle('on', b.dataset.lab === cur));
+}
+function updateLabelCount(){
+  const el = $('labelCount'); if(!el) return;
+  const v = Object.values(loadLabels());
+  const ai = v.filter(x=>x.label==='ai').length, hu = v.filter(x=>x.label==='human').length;
+  el.textContent = v.length ? `已标注 ${v.length} 段（AI ${ai} · 人写 ${hu}）。` : '';
+}
+$('labelClear') && $('labelClear').addEventListener('click', ()=>{
+  if(!confirm('清空本浏览器里保存的全部段落标注？')) return;
+  saveLabels({});
+  paragraphList.querySelectorAll('.para-label').forEach(paintLabel);
+});
+updateLabelCount();
 
 function applyFilter(){
   const only = $('onlyFlagged').checked;

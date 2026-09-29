@@ -502,6 +502,16 @@ def fit_poetry(parts, target_fpr, hs, as_):
     return {"calibration": cal, "report": res["report"], "evaluation": ev}
 
 
+def write_calib_data(parts, out_dir):
+    """把各文体校准集的原始分数（只保留数值）随代码发布，管理页"用我的标注校准"时与用户样本合并使用。"""
+    d = Path(out_dir) / "app" / "calib_data"
+    d.mkdir(parents=True, exist_ok=True)
+    for prof, spec in PROFILE_PARTS.items():
+        rows = [{"y": r["y"], "s": {k: round(v, 5) for k, v in r["s"].items()}} for p in spec["fit"] for r in parts.get(p, [])]
+        if rows:
+            (d / f"{prof}.json").write_text(json.dumps(rows, ensure_ascii=False, separators=(",", ":")), "utf-8")
+
+
 def stage_fit(args):
     d = Path(args.scores_dir)
     parts = {}
@@ -518,6 +528,7 @@ def stage_fit(args):
             print(f"::warning title=跳过 {prof}::没有足够的打分结果", flush=True)
     if "zh" not in fitted:
         raise SystemExit("没有现代汉语校准集的打分结果")
+    write_calib_data(parts, args.out)
 
     out_cal = dict(fitted["zh"]["calibration"])
     out_cal["profiles"] = {p: dict(r["calibration"], profile=p) for p, r in fitted.items() if p != "zh"}

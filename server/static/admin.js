@@ -74,7 +74,7 @@ async function readFiles(input){
   }
   return texts;
 }
-function splitSamples(s){ return s.split(/\n\s*===+\s*\n/).map(x=>x.trim()).filter(x=>x.length >= 50); }
+function splitSamples(s){ return s.split(/\n\s*===+\s*\n/).map(x=>x.trim()).filter(x=>x.length >= 16); }
 
 $('calBtn').addEventListener('click', async ()=>{
   const m = $('calMsg'), out = $('calOut');
@@ -82,9 +82,11 @@ $('calBtn').addEventListener('click', async ()=>{
   try{
     const human = splitSamples($('humanText').value).concat(await readFiles($('humanFiles')));
     const ai = splitSamples($('aiText').value).concat(await readFiles($('aiFiles')));
-    if(!human.length || !ai.length) throw new Error('两边都需要提供样本。');
+    const builtin = $('calBuiltin').checked;
+    if(builtin ? !(human.length || ai.length) : !(human.length && ai.length))
+      throw new Error(builtin ? '至少提供一段样本。' : '不合并内置数据时，两边都需要提供样本。');
     $('calBtn').disabled = true;
-    let job = await call('/admin/api/calibrate', { method:'POST', body: JSON.stringify({ human, ai, target_fpr: parseFloat($('targetFpr').value), profile: $('calProfile').value }) });
+    let job = await call('/admin/api/calibrate', { method:'POST', body: JSON.stringify({ human, ai, target_fpr: parseFloat($('targetFpr').value), profile: $('calProfile').value, include_builtin: builtin }) });
     while(job.status === 'queued' || job.status === 'running'){
       msg(m, job.status === 'queued' ? '排队中…' : `打分中：${job.done} / ${job.total} 段${job.eta_sec ? '，剩余约 ' + Math.ceil(job.eta_sec/60) + ' 分钟' : ''}`, true);
       await sleep(2000);
@@ -96,6 +98,8 @@ $('calBtn').addEventListener('click', async ()=>{
     msg(m, '校准完成。', true);
     out.innerHTML = `
       <p class="msg">文体：<b>${esc(report.profile_name || '现代汉语')}</b>${report.skipped_other_register_segments ? `（另有 ${report.skipped_other_register_segments} 段属于其他文体，未参与）` : ''}。样本：人写 ${report.n_human} 段、AI ${report.n_ai} 段。区分能力（AUROC，1 = 完美，0.5 = 随机）：${esc(au)}；综合 ${report.combined_auroc}。<br>
+      ${report.builtin_samples ? `已合并内置公开数据 ${report.builtin_samples} 段；你的样本：人写 ${report.user_human} 段、AI ${report.user_ai} 段。<br>` : ''}
+      ${report.user_samples ? `<b>在你自己的样本上</b>（交叉验证，每次都用没参与拟合的样本算）：${report.user_samples.n_ai ? `AI 识别出 ${(report.user_samples.ai_caught_rate*100).toFixed(0)}%` : ''}${report.user_samples.n_ai && report.user_samples.n_human ? '，' : ''}${report.user_samples.n_human ? `人写被误判 ${(report.user_samples.human_flagged_rate*100).toFixed(0)}%` : ''}。<br>` : ''}
       参与组合的特征：${esc((report.features_used||[]).join('、') || '三个主信号')}${report.cross_validated ? '（已做 5 折交叉验证）' : ''}。<br>
       阈值 ${report.threshold}：校准样本中人写段落被误判的比例 ${(report.human_flagged_rate*100).toFixed(1)}%，AI 段落被识别出的比例 ${(report.ai_caught_rate*100).toFixed(1)}%。<br>${esc(report.note)}</p>
       <div class="out" id="calJson">${esc(JSON.stringify(calibration))}</div>
@@ -122,4 +126,27 @@ $('calBtn').addEventListener('click', async ()=>{
   }finally{
     $('calBtn').disabled = false;
   }
+});
+
+
+/* 导入首页上"这段是 AI / 这段是人写"的标注（保存在本浏览器的 localStorage） */
+$('importLabels').addEventListener('click', ()=>{
+  let m = {};
+  try{ m = JSON.parse(localStorage.getItem('shendu_labels') || '{}'); }catch(e){}
+  const items = Object.values(m);
+  if(!items.length){ msg($('calMsg'), '本浏览器里还没有标注。请先在检测结果的段落下方点"这段是 AI / 这段是人写"。', false); return; }
+  const prof = $('calProfile').value;
+  const byReg = {};
+  items.forEach(x=>{ byReg[x.register] = (byReg[x.register] || 0) + 1; });
+  const reg = prof !== 'auto' ? prof : Object.keys(byReg).sort((a,b)=>byReg[b]-byReg[a])[0];
+  const pick = items.filter(x=> (x.register === reg) || (reg === 'zh' && x.register === 'zh'));
+  const join = (arr)=> arr.map(x=>x.text).join('\n===\n');
+  const hu = pick.filter(x=>x.label==='human'), ai = pick.filter(x=>x.label==='ai');
+  $('humanText').value = [$('humanText').value.trim(), join(hu)].filter(Boolean).join('\n===\n');
+  $('aiText').value = [$('aiText').value.trim(), join(ai)].filter(Boolean).join('\n===\n');
+  $('calProfile').value = reg;
+  const names = { zh:'现代汉语', zh_classical:'文言', zh_poetry:'诗词', en:'英文' };
+  const others = Object.entries(byReg).filter(([k])=>k!==reg).map(([k,v])=>`${names[k]||k} ${v} 段`).join('、');
+  msg($('calMsg'), `已导入${names[reg]||reg}的标注：人写 ${hu.length} 段、AI ${ai.length} 段。` +
+      (others ? `另有 ${others}，请切换"校准哪种文体"后再导入一次、分别校准。` : '') + '勾选"与内置公开数据合并"后点"开始校准"。', true);
 });

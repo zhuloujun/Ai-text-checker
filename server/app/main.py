@@ -241,6 +241,8 @@ class CalibrateIn(BaseModel):
     ai: list[str]
     target_fpr: float = 0.05
     profile: str = Field("auto", description="auto / zh（现代汉语）/ zh_classical（文言）/ zh_poetry（诗词）/ en（英文）")
+    include_builtin: bool = Field(True, description="与内置公开数据合并（推荐；样本少时尤其需要）")
+    count_in_rate: bool = Field(False, description="诗词等“只作参考”的文体，校准后是否改为计入 AI 率")
 
 
 class CalibrationIn(BaseModel):

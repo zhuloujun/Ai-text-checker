@@ -494,3 +494,20 @@ def test_memorized_guard_and_bare_title():
     segs = segment_text(doc)
     story = [s for s in segs if s.register == "zh_classical"]
     assert story and story[0].title == "黄四娘" and all(s.kind == "body" for s in story)
+
+
+def test_calibrate_with_user_labels_merged_with_builtin(client, monkeypatch):
+    import random
+    from app import engine as eng
+    rnd = random.Random(1)
+    fake = ([{"y": 0, "s": {"fastdetect": rnd.gauss(0, 1), "binoculars": rnd.gauss(1.0, .05), "classifier": rnd.uniform(.01, .4)}} for _ in range(80)]
+            + [{"y": 1, "s": {"fastdetect": rnd.gauss(2.5, 1), "binoculars": rnd.gauss(.85, .05), "classifier": rnd.uniform(.6, .99)}} for _ in range(80)])
+    monkeypatch.setattr(eng, "load_builtin_calib", lambda profile: fake)
+    ai_only = [ENGLISH * 4] * 6                      # 只标了 AI 一类
+    r = client.post("/admin/api/calibrate", json={"human": [], "ai": ai_only, "profile": "en", "include_builtin": True}, headers=ADMIN)
+    j = poll(client, r.json()["id"], ADMIN, "/admin/api/jobs/")
+    assert j["status"] == "done", j
+    rep = j["result"]["report"]
+    assert rep["builtin_samples"] == 160 and rep["user_ai"] >= 1 and rep["user_human"] == 0
+    assert "user_samples" in rep and rep["user_samples"]["n_ai"] >= 1
+    assert j["result"]["calibration"]["profile"] == "en"

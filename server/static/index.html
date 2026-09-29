@@ -124,6 +124,9 @@
       <span class="legend-item"><i class="dot dot-none"></i>未计入</span>
       <label class="legend-item filter"><input type="checkbox" id="onlyFlagged"> 只看疑似段落</label>
     </div>
+    <p class="label-bar" id="labelBar">检测不准？在段落下方点“这段是 AI / 这段是人写”标注。标注只保存在本浏览器，
+      可在<a href="/admin" target="_blank">管理页 · 校准</a>里一键导入，与内置数据合并校准，让结果更贴合你常用的 AI 工具和你的文风。
+      <span id="labelCount"></span> <button class="link-btn" id="labelClear" type="button">清空标注</button></p>
     <div class="paragraph-list" id="paragraphList"></div>
 
     <div class="section-block" id="formatSection">
