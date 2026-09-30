@@ -108,6 +108,7 @@ class Engine:
         self.cls = Classifier() if (config.ENABLE_CLASSIFIER and config.CLASSIFIER_MODEL) else None
         self.cls_en = (make_english_classifier()
                        if (config.ENABLE_EN_CLASSIFIER and config.EN_CLASSIFIER_MODEL) else None)
+        self.cls_en2 = (Classifier(config.EN2_CLASSIFIER_MODEL, 320) if config.EN2_CLASSIFIER_MODEL else None)
         self.cls_poetry = (Classifier(config.POETRY_CLASSIFIER_MODEL, 128) if config.POETRY_CLASSIFIER_MODEL else None)
         self.cls_classical = (Classifier(config.CLASSICAL_CLASSIFIER_MODEL, 256) if config.CLASSICAL_CLASSIFIER_MODEL else None)
         self.loading = True
@@ -155,6 +156,7 @@ class Engine:
     def load_all(self):
         try:
             for name, det in (("语言模型", self.lm), ("中文分类器", self.cls), ("英文分类器", self.cls_en),
+                              ("英文第二分类器", self.cls_en2),
                               ("诗词分类器", self.cls_poetry), ("文言分类器", self.cls_classical)):
                 if det is None:
                     continue
@@ -184,6 +186,7 @@ class Engine:
             "lm": st(self.lm, [config.OBSERVER_MODEL, config.PERFORMER_MODEL]),
             "classifier": st(self.cls, config.CLASSIFIER_MODEL),
             "classifier_en": st(self.cls_en, config.EN_CLASSIFIER_MODEL),
+            "classifier_en2": st(self.cls_en2, config.EN2_CLASSIFIER_ID),
             "classifier_poetry": st(self.cls_poetry, config.POETRY_CLASSIFIER_ID),
             "classifier_classical": st(self.cls_classical, config.CLASSICAL_CLASSIFIER_ID),
             "calibration": {"calibrated": bool(self.cal.get("calibrated")), "source": self.cal_source,
@@ -231,6 +234,17 @@ class Engine:
                 out[i] = p
         return out
 
+    def classify_en2(self, texts: list[str], registers: list[str]) -> list:
+        """英文段落再用英文第二分类器（专门见过国产大模型写的英文）打一次分。"""
+        out = [None] * len(texts)
+        if not (self.cls_en2 and self.cls_en2.ready):
+            return out
+        idx = [i for i, r in enumerate(registers) if r == "en"]
+        if idx:
+            for i, p in zip(idx, self.cls_en2.predict([texts[i] for i in idx])):
+                out[i] = p
+        return out
+
     def raw_scores(self, texts: list[str], progress=None, registers: list[str] | None = None) -> list[dict]:
         """对若干段文字算原始分数（校准、评估时也用这个）。"""
         registers = registers or [detect_register(t) for t in texts]
@@ -241,6 +255,9 @@ class Engine:
         for i, p in enumerate(self.classify_second(texts, registers)):
             if p is not None:
                 out[i]["classifier_mpu"] = p
+        for i, p in enumerate(self.classify_en2(texts, registers)):
+            if p is not None:
+                out[i]["classifier_en2"] = p
         if self.lm and self.lm.ready:
             for i, t in enumerate(texts):
                 t0 = time.time()
@@ -299,6 +316,9 @@ class Engine:
         for s, p in zip(scored, self.classify_second(sc_texts, sc_regs)):
             if p is not None:
                 results[s.index]["classifier_mpu"] = p
+        for s, p in zip(scored, self.classify_en2(sc_texts, sc_regs)):
+            if p is not None:
+                results[s.index]["classifier_en2"] = p
         # 语言模型较慢：快速模式下抽样
         if self.lm and self.lm.ready:
             done = 0
@@ -498,6 +518,7 @@ class Engine:
                     "binoculars": bool(self.lm and self.lm.ready),
                     "classifier": bool(self.cls and self.cls.ready),
                     "classifier_en": bool(self.cls_en and self.cls_en.ready),
+                    "classifier_en2": bool(self.cls_en2 and self.cls_en2.ready),
                     "classifier_poetry": bool(self.cls_poetry and self.cls_poetry.ready),
                     "classifier_classical": bool(self.cls_classical and self.cls_classical.ready),
                 },

@@ -57,6 +57,9 @@ PART_PROFILE = {
     # 2026-09 的实验表明，把它们加入逻辑回归校准不能把它们与人写分开（检出率仍只有约 6%），反而拉低原有评估集的效果；
     # 它们只用于训练专门的分类器（tools/train_classical.py，按同样的 fit / test 划分，评估部分从不参与训练）。
     "cl_user": "zh_classical", "po_user": "zh_poetry", "en_user": "en",
+    # 国产大模型写的英文论文段落（tools/gen_english_ai.py 生成）+ 同题 arXiv 真人摘要。只取英文第二分类器训练时
+    # 留作评估的那些题目（tools/train_english.py 的 split_of），再对半分：一半参与校准、一半只评估。
+    "en_gen_fit": "en", "en_gen_test": "en",
 }
 USER_MODELS = {"deepseek": "DeepSeek", "kimi": "Kimi", "wenxin": "文心一言"}
 USER_PARTS = {"cl_user": "classical", "po_user": "poem", "en_user": "english"}
@@ -71,7 +74,9 @@ PROFILE_PARTS = {
                                               ("po_test", "ChangAn 保留集（另一批作者 + 没见过的 Kimi-K2 与其他模型的新诗词）"),
                                               ("po_story", "复述故事情节的 AI 诗词（本仓库自带，40 首）"),
                                               ("po_classic", "唐诗三百首 + 宋词三百首（人写名篇，检查误判）")]},
-    "en": {"fit": ["en_cal1", "en_cal2"], "eval": [("en_user", "国产新模型 AI 英文短篇（DeepSeek / Kimi / 文心一言，用户提供，不参与校准）"),
+    "en": {"fit": ["en_cal1", "en_cal2", "en_gen_fit"],
+           "eval": [("en_gen_test", "国产大模型英文论文段落（DeepSeek / 文心一言写的摘要、引言、结果、结论）vs 同题 arXiv 真人摘要；题目没参与训练和校准"),
+                    ("en_user_test", "国产新模型 AI 英文短篇（DeepSeek / Kimi / 文心一言，用户提供；英文第二分类器训练时没见过的那 1/3）"),
                                                   ("en_ood", "MAGE：GPT-4 在未见过的领域生成的文本"),
                                                   ("en_para", "MAGE：GPT-4 文本经改写后（含本仓库英文 AI 样本）")]},
     "zh_classical": {"fit": ["cl_cal"], "eval": [("cl_test", "文言保留集（另一组古籍 + 未参与校准的 AI 文言）"),
@@ -347,6 +352,32 @@ def user_ai_rows(kind):
     return rows
 
 
+GEN_EN_DIR = DATA_DIR / "gen_en"
+
+
+def _md5_int(s: str) -> int:
+    return int(hashlib.md5(s.encode("utf-8")).hexdigest(), 16)
+
+
+def en_gen_parts():
+    """只用英文第二分类器训练时留作评估的题目（md5(题目) % 5 == 0，与 tools/train_english.py 一致），按题目再对半分。"""
+    out = {"en_gen_fit": [], "en_gen_test": []}
+    if not GEN_EN_DIR.exists():
+        return out
+    for f in sorted(GEN_EN_DIR.glob("*.jsonl")):
+        human = f.stem == "arxiv_human"
+        for line in f.read_text("utf-8").splitlines():
+            if not line.strip():
+                continue
+            r = json.loads(line)
+            if _md5_int(r["title"]) % 5 != 0:
+                continue
+            part = "en_gen_fit" if _md5_int("cal|" + r["title"]) % 2 == 0 else "en_gen_test"
+            out[part].append({"text": r["text"], "y": 0 if human else 1,
+                              "model": "arxiv-human" if human else f"gen-{f.stem}"})
+    return out
+
+
 def split_user_parts(parts):
     for base in USER_PARTS:
         rows = parts.get(base)
@@ -356,6 +387,8 @@ def split_user_parts(parts):
 
 
 def build_part(args, part):
+    if part in ("en_gen_fit", "en_gen_test"):
+        return en_gen_parts()[part]
     if part in USER_PARTS:
         return user_ai_rows(USER_PARTS[part])
     prof = PART_PROFILE[part]
@@ -384,6 +417,8 @@ def stage_score(args):
             "zh_classical": st.get("classifier_classical") or {}}.get(prof, st["classifier"])
     if prof in ("zh_poetry", "zh_classical") and not need.get("enabled"):
         need = st["classifier"]
+    if prof == "en" and config.EN2_CLASSIFIER_MODEL and not st["classifier_en2"].get("ready"):
+        raise SystemExit(f"英文第二分类器没有加载成功：{json.dumps(st['classifier_en2'], ensure_ascii=False)}")
     if not (st["lm"].get("ready") and need.get("ready")):
         raise SystemExit(f"模型没有全部加载成功，停止打分：{json.dumps(st, ensure_ascii=False)}")
     segs, labels, meta = [], [], []
@@ -429,7 +464,7 @@ def evaluate_rows(rows, cal, name):
            "ai_caught": round(sum(p >= thr for p in ap_) / len(ap_), 4) if ap_ else None,
            "human_flagged": round(sum(p >= thr for p in hp) / len(hp), 4) if hp else None,
            "per_signal_auroc": {}, "ai_caught_by_model": {}, "human_flagged_by_source": {}}
-    for k in scoring.EXTENDED_FEATURES:
+    for k in scoring.EXTENDED_FEATURES + ["logit_classifier_mpu", "logit_classifier_en2"]:
         pv = [scoring.feature_value(r["s"], k) for r in rows if r["y"] == 1]
         nv = [scoring.feature_value(r["s"], k) for r in rows if r["y"] == 0]
         pv = [v for v in pv if v is not None]; nv = [v for v in nv if v is not None]
@@ -464,6 +499,9 @@ def fit_profile(prof, parts, target_fpr):
     if len(hs) < 10 or len(as_) < 10:
         return None
     fixed = scoring.PROFILE_FEATURES.get(prof)
+    use_en2 = prof == "en" and all(scoring.feature_value(r, "logit_classifier_en2") is not None for r in hs[:20])
+    if use_en2:
+        fixed = scoring.EN2_FEATURES
     if prof == "zh_poetry":
         return fit_poetry(parts, target_fpr, hs, as_)
     if fixed:
@@ -493,6 +531,11 @@ def fit_profile(prof, parts, target_fpr):
     cal["note"] = (f"内置默认校准（{scoring.PROFILE_NAMES[prof]}）：用公开数据 {len(hs)} 段人写、{len(as_)} 段 AI 文本拟合；"
                    "建议再用你自己的文字校准。")
     ev = [evaluate_rows(parts[p], cal, name) for p, name in spec["eval"] if parts.get(p)]
+    if use_en2:
+        # 对照：同样的校准数据，不用英文第二分类器（即接入前的做法），看它到底带来多少变化
+        base = scoring.calibrate(hs, as_, target_fpr, features=scoring.BASE_FEATURES)["calibration"]
+        ev += [evaluate_rows(parts[p], base, name + "【对照：不用英文第二分类器】")
+               for p, name in spec["eval"] if parts.get(p)]
     return {"calibration": cal, "report": res["report"], "evaluation": ev}
 
 

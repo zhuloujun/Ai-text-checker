@@ -73,6 +73,17 @@ jobs:
           else
             echo "内置校准的文言部分没有使用文言分类器，本次不部署它。"
           fi
+      - name: 取出英文第二分类器（只在内置校准已按它拟合时使用）
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if grep -q 'english-classifier-v1' server/app/default_calibration.json; then
+            gh release download english-classifier-v1 -p english-classifier.tar.gz -D /tmp -R "${{ github.repository }}"
+            tar xzf /tmp/english-classifier.tar.gz -C server/
+            ls server/english-classifier
+          else
+            echo "内置校准的英文部分没有使用英文第二分类器，本次不部署它。"
+          fi
       - name: 部署
         working-directory: server
         env:

@@ -46,7 +46,7 @@ env:
   N_CL_HUMAN_TEST: "160"
   N_PO_CAL: "800"
   N_PO_TEST: "600"
-  PUSH_PARTS: '["en_cal1","en_cal2","en_ood","en_para","en_user"]'
+  PUSH_PARTS: '["en_cal1","en_cal2","en_ood","en_para","en_user","en_gen_fit","en_gen_test"]'
 
 jobs:
   plan:
@@ -57,7 +57,7 @@ jobs:
       - id: p
         run: |
           if [ "${{ github.event.inputs.include_zh }}" = "true" ]; then
-            echo 'parts=["cal1","cal2","test","csl","cal1s","cal2s","tests","en_cal1","en_cal2","en_ood","en_para","cl_cal","cl_test","po_cal","po_test","po_story","po_classic","cl_user","po_user","en_user"]' >> "$GITHUB_OUTPUT"
+            echo 'parts=["cal1","cal2","test","csl","cal1s","cal2s","tests","en_cal1","en_cal2","en_ood","en_para","cl_cal","cl_test","po_cal","po_test","po_story","po_classic","cl_user","po_user","en_user","en_gen_fit","en_gen_test"]' >> "$GITHUB_OUTPUT"
           else
             echo "parts=$PUSH_PARTS" >> "$GITHUB_OUTPUT"
           fi
@@ -134,6 +134,16 @@ jobs:
             tar xzf /tmp/classical-classifier.tar.gz -C /tmp
             echo "CLASSICAL_CLASSIFIER_MODEL=/tmp/classical-classifier" >> "$GITHUB_ENV"
           fi
+      - name: 下载英文第二分类器（本仓库 Release english-classifier-v1；没有时英文只用 desklib）
+        if: ${{ startsWith(matrix.part, 'en_') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release download english-classifier-v1 -p english-classifier.tar.gz -D /tmp -R "${{ github.repository }}"; then
+            tar xzf /tmp/english-classifier.tar.gz -C /tmp
+            ls /tmp/english-classifier
+            echo "EN2_CLASSIFIER_MODEL=/tmp/english-classifier" >> "$GITHUB_ENV"
+          fi
       - name: 打分
         working-directory: server
         env:
@@ -180,6 +190,11 @@ jobs:
           if python3 -c "import json,sys; r=json.load(open('tools/scores/cl_cal.json')); sys.exit(0 if r and 'classifier_mpu' in r[0]['s'] else 1)"; then
             export CLASSICAL_CLASSIFIER_MODEL=/tmp/classical-classifier
             echo "文言按文言分类器拟合"
+          fi
+          # 英文各份的打分里带有第二分类器（classifier_en2）时，英文按两个分类器一起拟合
+          if python3 -c "import json,sys; r=json.load(open('tools/scores/en_cal1.json')); sys.exit(0 if r and 'classifier_en2' in r[0]['s'] else 1)"; then
+            export EN2_CLASSIFIER_MODEL=/tmp/english-classifier
+            echo "英文按 desklib + 英文第二分类器拟合"
           fi
           python tools/evaluate.py --stage fit --scores-dir tools/scores --target-fpr 0.05
       - name: 把结果提交回仓库

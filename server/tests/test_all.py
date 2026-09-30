@@ -14,6 +14,7 @@ if not MD:
 os.environ.update({
     "OBSERVER_MODEL": f"{MD}/observer", "PERFORMER_MODEL": f"{MD}/performer", "CLASSIFIER_MODEL": f"{MD}/cls",
     "EN_CLASSIFIER_MODEL": f"{MD}/desklib_en", "POETRY_CLASSIFIER_MODEL": f"{MD}/desklib_en/../cls",
+    "EN2_CLASSIFIER_MODEL": f"{MD}/cls",
     "ADMIN_TOKEN": "test-admin-pw", "LM_MAX_TOKENS": "128", "CALIBRATION_FILE": "/nonexistent/cal.json",
     "MAX_TEXT_CHARS": "300000",
     "USER_CALIBRATION_FILE": f"/tmp/test_user_calibration_{os.getpid()}.json",
@@ -332,7 +333,7 @@ def test_detect_sync(client):
     assert j["status"] == "done"
     s = j["result"]["summary"]
     assert s["methods"] == {"fastdetect": True, "binoculars": True, "classifier": True, "classifier_en": True,
-                            "classifier_poetry": True,
+                            "classifier_en2": True, "classifier_poetry": True,
                             "classifier_classical": bool(os.environ.get("CLASSICAL_CLASSIFIER_MODEL"))}
     assert 0 <= s["ai_rate"] <= 1 and s["counted_chars"] > 0
     seg = j["result"]["segments"][0]
@@ -676,3 +677,15 @@ def test_english_glued_sentences_are_respaced():
     assert normalize_english("growth trend.However, prices rose.The yield was 3.8 kg.") == \
         "growth trend. However, prices rose. The yield was 3.8 kg."
     assert normalize_english("1.Introduction") == "1. Introduction"
+
+
+def test_english_second_classifier_is_scored_and_named_in_calibration(client):
+    """英文段落同时用 desklib 和英文第二分类器（国产大模型英文）打分；校准参数按两个分类器的组合名匹配。"""
+    from app import config
+    h = {"Authorization": "Bearer " + issue(client)}
+    res = client.post("/v1/detect", json={"text": ENGLISH * 4}, headers=h).json()["result"]
+    seg = [s for s in res["segments"] if s["register"] == "en"][0]
+    assert "classifier" in seg["raw"] and "classifier_en2" in seg["raw"]
+    assert config.classifier_for("en").endswith("+" + config.EN2_CLASSIFIER_ID)
+    assert scoring.feature_value({"classifier_en2": 0.5}, "logit_classifier_en2") == 0.0
+    assert scoring.feature_value({}, "logit_classifier_en2") is None

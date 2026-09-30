@@ -32,6 +32,10 @@ CLASSIFIER_AI_LABEL = os.getenv("CLASSIFIER_AI_LABEL", "auto")
 EN_CLASSIFIER_MODEL = os.getenv("EN_CLASSIFIER_MODEL", "desklib/ai-text-detector-v1.01")
 ENABLE_EN_CLASSIFIER = _bool("ENABLE_EN_CLASSIFIER", True)
 EN_CLS_MAX_TOKENS = _int("EN_CLS_MAX_TOKENS", 512)
+# 英文第二分类器（tools/train_english.py：arXiv / MAGE 人写 vs DeepSeek、文心一言等国产大模型写的英文论文段落，
+# 发布在本仓库 Release english-classifier-v1）。与 desklib（主要见过 GPT、LLaMA 等国外模型）互补。填本地目录；留空则不用。
+EN2_CLASSIFIER_MODEL = os.getenv("EN2_CLASSIFIER_MODEL", "")
+EN2_CLASSIFIER_ID = os.getenv("EN2_CLASSIFIER_ID", "english-classifier-v1")
 # 诗词专用分类器（tools/train_poetry.py 在 ChangAn 上微调，发布在本仓库 Release）。填本地目录；留空则诗词用通用中文分类器。
 POETRY_CLASSIFIER_MODEL = os.getenv("POETRY_CLASSIFIER_MODEL", "")
 POETRY_CLASSIFIER_ID = os.getenv("POETRY_CLASSIFIER_ID", "poetry-classifier-v1")   # 校准参数按这个名字匹配模型
@@ -99,7 +103,8 @@ CALIBRATION_FILE = Path(os.getenv("CALIBRATION_FILE", str(BASE_DIR / "calibratio
 
 def classifier_for(register: str) -> str:
     if register == "en":
-        return EN_CLASSIFIER_MODEL
+        # 用了第二分类器时，校准参数必须是按两个分类器一起拟合的，所以把两个名字一起记进校准的 models 里
+        return f"{EN_CLASSIFIER_MODEL}+{EN2_CLASSIFIER_ID}" if EN2_CLASSIFIER_MODEL else EN_CLASSIFIER_MODEL
     if register == "zh_poetry" and POETRY_CLASSIFIER_MODEL:
         return POETRY_CLASSIFIER_ID
     if register == "zh_classical" and CLASSICAL_CLASSIFIER_MODEL:

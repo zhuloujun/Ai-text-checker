@@ -24,6 +24,10 @@ HAS_POETRY = (POETRY_LOCAL / "config.json").exists()
 CLASSICAL_LOCAL = Path(__file__).resolve().parent / "classical-classifier"
 CLASSICAL_DIR = "/models/classical-classifier"
 HAS_CLASSICAL = (CLASSICAL_LOCAL / "config.json").exists()
+# 英文第二分类器（tools/train_english.py 训练，Release english-classifier-v1）：部署工作流按需下载到 server/english-classifier
+EN2_LOCAL = Path(__file__).resolve().parent / "english-classifier"
+EN2_DIR = "/models/english-classifier"
+HAS_EN2 = (EN2_LOCAL / "config.json").exists()
 CPU_CORES = 8
 
 image = (
@@ -40,6 +44,7 @@ image = (
         "EN_CLASSIFIER_MODEL": EN_CLASSIFIER_MODEL,
         "POETRY_CLASSIFIER_MODEL": POETRY_DIR if HAS_POETRY else "",
         "CLASSICAL_CLASSIFIER_MODEL": CLASSICAL_DIR if HAS_CLASSICAL else "",
+        "EN2_CLASSIFIER_MODEL": EN2_DIR if HAS_EN2 else "",
         "USER_CALIBRATION_FILE": "/data/user_calibration.json",
         "USER_LABELS_FILE": "/data/user_labels.json",
         "CALIBRATION_VOLUME": "ai-text-checker-data",
@@ -54,6 +59,8 @@ if HAS_POETRY:
     image = image.add_local_dir(str(POETRY_LOCAL), POETRY_DIR)
 if HAS_CLASSICAL:
     image = image.add_local_dir(str(CLASSICAL_LOCAL), CLASSICAL_DIR)
+if HAS_EN2:
+    image = image.add_local_dir(str(EN2_LOCAL), EN2_DIR)
 
 app = modal.App("ai-text-checker")
 # 持久卷：保存管理页“用我的标注校准”的结果，服务重启 / 重新部署后仍然有效

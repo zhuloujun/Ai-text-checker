@@ -61,6 +61,9 @@ def feature_value(scores: dict, name: str):
     if name == "logit_classifier_mpu":
         cl = scores.get("classifier_mpu")
         return None if cl is None else _logit(cl)
+    if name == "logit_classifier_en2":
+        cl = scores.get("classifier_en2")
+        return None if cl is None else _logit(cl)
     v = scores.get(name)
     return None if v is None else float(v)
 
@@ -278,6 +281,8 @@ PROFILE_NAMES = {"zh": "现代汉语", "zh_short": "现代汉语短段", "zh_cla
 # 文言：有了文言专用分类器后，三个主信号与全部特征的交叉验证几乎相同（0.9960 vs 0.9956），但在没见过的
 #   DeepSeek / Kimi / 文心一言仿古文上，全部特征只认出 81%，三个主信号认出 94%（古籍保留集误判 2.8%，与接入分类器前持平）：
 #   困惑度、预测熵等扩展特征会被"刻意仿古"的文风带偏，把 AI 仿写拉回"像人写"。故文言只用三个主信号。
+# 英文有第二分类器（国产大模型英文）时，在三个主信号之外再加它（见 tools/evaluate.py 的 fit_profile）。
+EN2_FEATURES = BASE_FEATURES + ["logit_classifier_en2"]
 PROFILE_FEATURES = {"en": BASE_FEATURES, "zh_classical": BASE_FEATURES}
 NEAR_MARGIN = 0.15   # 低于阈值不到这么多的段落标为"接近阈值"（不计入 AI 率）
 
