@@ -26,7 +26,7 @@
 
 ## 英文
 - 数据：MAGE（人写文本与 GPT-3.5 / GPT-4 等生成文本）
-- 校准集 296 人写 / 300 AI；阈值 0.6437；交叉验证 AUROC 0.9649；特征 fastdetect, binoculars, logit_classifier
+- 校准集 296 人写 / 300 AI；阈值 0.6432；交叉验证 AUROC 0.9648；特征 fastdetect, binoculars, logit_classifier
 - **国产新模型 AI 英文短篇（DeepSeek / Kimi / 文心一言，用户提供，不参与校准）**（46 AI / 0 人写）：AUROC None；检出率 4.3%
   - 各来源检出率：repo-ai-deepseek 0%，repo-ai-kimi 0%，repo-ai-wenxin 20%
   - 各特征 AUROC：
