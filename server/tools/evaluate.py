@@ -485,7 +485,9 @@ def evaluate_rows(rows, cal, name):
 
 # 各文体的人写误判率目标。短段文本信号弱、跨数据集漂移大（校准集上 2% 的误判率到测试集上会升到约 10%），
 # 所以预先定得更严（与 Turnitin 对短文本从严的做法一致）。诗词同理：宁可少抓，也不冤枉写诗的人。
-PROFILE_TARGET_FPR = {"zh_short": 0.01, "zh_poetry": 0.03, "zh_classical": 0.03}
+# 英文 0.04：接入英文第二分类器后，按 5% 拟合时国产模型英文检出 98%，但 MAGE 新领域人写误判从 6% 升到 13%；
+# 按 4% 拟合时国产模型英文 91%（原 87%）、arXiv 误判 1.5%（原 4.5%），MAGE 与接入前基本持平（见 EVAL_REPORT.md）。
+PROFILE_TARGET_FPR = {"zh_short": 0.01, "zh_poetry": 0.03, "zh_classical": 0.03, "en": 0.04}
 # 自动选特征时，其他组合要比"全部特征"高出这么多才换（避免被交叉验证的随机波动带偏）
 SELECTION_MARGIN = 0.005
 

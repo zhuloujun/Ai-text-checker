@@ -195,9 +195,9 @@
    ],
    "cross_validated": true,
    "combined_auroc": 0.9748,
-   "threshold": 0.633,
-   "human_flagged_rate": 0.0513,
-   "ai_caught_rate": 0.8739,
+   "threshold": 0.7073,
+   "human_flagged_rate": 0.0427,
+   "ai_caught_rate": 0.851,
    "note": "以上指标用 5 折交叉验证（每次用没参与拟合的样本）算出；样本越多、越接近你要检测的文本，越可信。"
   },
   "evaluation": [
@@ -206,8 +206,8 @@
     "n_human": 66,
     "n_ai": 55,
     "auroc": 0.9923,
-    "ai_caught": 0.9818,
-    "human_flagged": 0.0606,
+    "ai_caught": 0.9091,
+    "human_flagged": 0.0152,
     "per_signal_auroc": {
      "fastdetect": 0.6738,
      "binoculars": 0.3234,
@@ -223,11 +223,11 @@
      "logit_classifier_en2": 0.9934
     },
     "ai_caught_by_model": {
-     "gen-deepseek": 0.9688,
+     "gen-deepseek": 0.8438,
      "gen-wenxin": 1.0
     },
     "human_flagged_by_source": {
-     "arxiv-human": 0.0606
+     "arxiv-human": 0.0152
     }
    },
    {
@@ -235,11 +235,11 @@
     "n_human": 0,
     "n_ai": 15,
     "auroc": null,
-    "ai_caught": 0.2667,
+    "ai_caught": 0.1333,
     "human_flagged": null,
     "per_signal_auroc": {},
     "ai_caught_by_model": {
-     "repo-ai-deepseek": 0.3,
+     "repo-ai-deepseek": 0.1,
      "repo-ai-kimi": 0.0,
      "repo-ai-wenxin": 0.3333
     },
@@ -250,8 +250,8 @@
     "n_human": 150,
     "n_ai": 150,
     "auroc": 0.9813,
-    "ai_caught": 0.9733,
-    "human_flagged": 0.1333,
+    "ai_caught": 0.9467,
+    "human_flagged": 0.0867,
     "per_signal_auroc": {
      "fastdetect": 0.8273,
      "binoculars": 0.1768,
@@ -267,16 +267,16 @@
      "logit_classifier_en2": 0.924
     },
     "ai_caught_by_model": {
-     "cnn_gpt4": 0.9429,
+     "cnn_gpt4": 0.8857,
      "imdb_gpt4": 0.9574,
-     "pubmed_gpt4": 1.0,
+     "pubmed_gpt4": 0.9444,
      "dialogsum_gpt4": 1.0
     },
     "human_flagged_by_source": {
-     "pubmed_human": 0.1429,
-     "dialogsum_human": 0.2353,
+     "pubmed_human": 0.102,
+     "dialogsum_human": 0.1765,
      "imdb_human": 0.0,
-     "cnn_human": 0.125
+     "cnn_human": 0.05
     }
    },
    {
@@ -284,8 +284,8 @@
     "n_human": 150,
     "n_ai": 173,
     "auroc": 0.8776,
-    "ai_caught": 0.7919,
-    "human_flagged": 0.18,
+    "ai_caught": 0.7341,
+    "human_flagged": 0.1467,
     "per_signal_auroc": {
      "fastdetect": 0.5799,
      "binoculars": 0.4234,
@@ -301,20 +301,20 @@
      "logit_classifier_en2": 0.7928
     },
     "ai_caught_by_model": {
-     "pubmed_gpt4_para": 0.7959,
-     "cnn_gpt4_para": 0.6279,
-     "imdb_gpt4_para": 0.8065,
-     "dialogsum_gpt4_para": 0.963,
-     "repo-ai-english": 0.8696
+     "pubmed_gpt4_para": 0.7347,
+     "cnn_gpt4_para": 0.6047,
+     "imdb_gpt4_para": 0.7742,
+     "dialogsum_gpt4_para": 0.8148,
+     "repo-ai-english": 0.8261
     },
     "human_flagged_by_source": {
-     "pubmed_human": 0.1579,
+     "pubmed_human": 0.1053,
      "imdb_human": 0.0,
      "pubmed_human_para": 0.0588,
-     "cnn_human": 0.1765,
-     "dialogsum_human_para": 0.5217,
-     "cnn_human_para": 0.1429,
-     "imdb_human_para": 0.2353,
+     "cnn_human": 0.1176,
+     "dialogsum_human_para": 0.4783,
+     "cnn_human_para": 0.0952,
+     "imdb_human_para": 0.1765,
      "dialogsum_human": 0.0769
     }
    },
@@ -367,7 +367,7 @@
     "n_human": 150,
     "n_ai": 150,
     "auroc": 0.985,
-    "ai_caught": 0.9533,
+    "ai_caught": 0.9267,
     "human_flagged": 0.06,
     "per_signal_auroc": {
      "fastdetect": 0.8273,
@@ -384,10 +384,10 @@
      "logit_classifier_en2": 0.924
     },
     "ai_caught_by_model": {
-     "cnn_gpt4": 0.9143,
-     "imdb_gpt4": 0.9574,
+     "cnn_gpt4": 0.8571,
+     "imdb_gpt4": 0.9362,
      "pubmed_gpt4": 0.9444,
-     "dialogsum_gpt4": 1.0
+     "dialogsum_gpt4": 0.9688
     },
     "human_flagged_by_source": {
      "pubmed_human": 0.0612,
@@ -401,8 +401,8 @@
     "n_human": 150,
     "n_ai": 173,
     "auroc": 0.8861,
-    "ai_caught": 0.7283,
-    "human_flagged": 0.14,
+    "ai_caught": 0.6936,
+    "human_flagged": 0.1267,
     "per_signal_auroc": {
      "fastdetect": 0.5799,
      "binoculars": 0.4234,
@@ -418,11 +418,11 @@
      "logit_classifier_en2": 0.7928
     },
     "ai_caught_by_model": {
-     "pubmed_gpt4_para": 0.8776,
-     "cnn_gpt4_para": 0.5814,
-     "imdb_gpt4_para": 0.7742,
+     "pubmed_gpt4_para": 0.8163,
+     "cnn_gpt4_para": 0.5581,
+     "imdb_gpt4_para": 0.7419,
      "dialogsum_gpt4_para": 0.7407,
-     "repo-ai-english": 0.6087
+     "repo-ai-english": 0.5652
     },
     "human_flagged_by_source": {
      "pubmed_human": 0.1053,
@@ -430,8 +430,8 @@
      "pubmed_human_para": 0.0,
      "cnn_human": 0.0588,
      "dialogsum_human_para": 0.3913,
-     "cnn_human_para": 0.2381,
-     "imdb_human_para": 0.2353,
+     "cnn_human_para": 0.1905,
+     "imdb_human_para": 0.1765,
      "dialogsum_human": 0.0
     }
    }
