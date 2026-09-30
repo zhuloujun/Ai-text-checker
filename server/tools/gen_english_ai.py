@@ -98,11 +98,13 @@ def _throttle(url):
 
 def chat_once(url, key, model, prompt, temperature):
     _throttle(url)
+    new_kimi = model.startswith("kimi-k")          # Kimi 新模型（k2.6 / k3 等）只接受 temperature = 1，且会先"思考"，要留足 token
     body = json.dumps({"model": model, "messages": [{"role": "user", "content": prompt}],
-                       "temperature": min(temperature, 1.0), "max_tokens": 1200}).encode()
+                       "temperature": 1.0 if new_kimi else min(temperature, 1.0),
+                       "max_tokens": 6000 if new_kimi else 1200}).encode()
     req = urllib.request.Request(url, body, {"Content-Type": "application/json", "Authorization": f"Bearer {key}"})
-    with urllib.request.urlopen(req, timeout=120) as r:
-        return json.loads(r.read())["choices"][0]["message"]["content"].strip()
+    with urllib.request.urlopen(req, timeout=300) as r:
+        return (json.loads(r.read())["choices"][0]["message"].get("content") or "").strip()
 
 
 def _get_json(url, key):
@@ -119,7 +121,7 @@ def discover_models(name, key, endpoints):
             ids = [m.get("id") for m in _get_json(base + "/models", key).get("data", []) if m.get("id")]
             print(f"::notice title={name} 可用模型（{base}）::{', '.join(ids[:40]) or '（空）'}", flush=True)
             chat_ids = [i for i in ids if not re.search(r"embed|vision|tts|audio|image|rerank", i, re.I)]
-            chat_ids.sort(key=lambda i: (("8k" not in i and "turbo" not in i), i))
+            chat_ids.sort(key=lambda i: ("code" in i, ("8k" not in i and "turbo" not in i), i))
             extra += [(base + "/chat/completions", i) for i in chat_ids]
         except urllib.error.HTTPError as e:
             print(f"::warning title={name} 查询模型列表失败::{base} → HTTP {e.code} {e.read()[:200]!r}", flush=True)
