@@ -274,8 +274,11 @@ def calibrate(human: list[dict], ai: list[dict], target_fpr: float = 0.05, featu
 PROFILE_NAMES = {"zh": "现代汉语", "zh_short": "现代汉语短段", "zh_classical": "文言", "zh_poetry": "诗词", "en": "英文"}
 # 各文体用哪些特征做组合（用训练时没见过的评估集比较后选定，见 tools/EVAL_REPORT.md）：
 # 英文：分类器 + Fast-DetectGPT + Binoculars 三个主信号，在 GPT-4 新领域和改写文本上都优于全部特征；
-# 现代汉语、文言：全部扩展特征更好。
-PROFILE_FEATURES = {"en": BASE_FEATURES}
+# 现代汉语：全部扩展特征更好。
+# 文言：有了文言专用分类器后，三个主信号与全部特征的交叉验证几乎相同（0.9960 vs 0.9956），但在没见过的
+#   DeepSeek / Kimi / 文心一言仿古文上，全部特征只认出 81%，三个主信号认出 94%（古籍保留集误判 2.8%，与接入分类器前持平）：
+#   困惑度、预测熵等扩展特征会被"刻意仿古"的文风带偏，把 AI 仿写拉回"像人写"。故文言只用三个主信号。
+PROFILE_FEATURES = {"en": BASE_FEATURES, "zh_classical": BASE_FEATURES}
 NEAR_MARGIN = 0.15   # 低于阈值不到这么多的段落标为"接近阈值"（不计入 AI 率）
 
 
