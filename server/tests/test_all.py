@@ -525,7 +525,9 @@ def test_default_calibration_profiles_name_the_deployed_models():
     expect = {"en": "desklib/ai-text-detector-v1.01", "zh_poetry": config.POETRY_CLASSIFIER_ID,
               "zh_classical": "yuchuantian/AIGC_detector_zhv3", "zh_short": "yuchuantian/AIGC_detector_zhv3"}
     # 文言：按文言专用分类器拟合时，部署工作流会一并部署它（见 deploy-server.yml），两者都是合法的
-    alt = {"zh_classical": config.CLASSICAL_CLASSIFIER_ID}
+    # 英文：按 desklib + 英文第二分类器拟合时，部署工作流同样会一并部署第二分类器
+    alt = {"zh_classical": config.CLASSICAL_CLASSIFIER_ID,
+           "en": "desklib/ai-text-detector-v1.01+" + config.EN2_CLASSIFIER_ID}
     for prof, model in expect.items():
         if prof in cal.get("profiles", {}):
             assert cal["profiles"][prof]["models"]["classifier"] in (model, alt.get(prof)), prof
