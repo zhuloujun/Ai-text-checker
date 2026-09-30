@@ -105,9 +105,43 @@ def chat_once(url, key, model, prompt, temperature):
         return json.loads(r.read())["choices"][0]["message"]["content"].strip()
 
 
+def _get_json(url, key):
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {key}"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.loads(r.read())
+
+
+def discover_models(name, key, endpoints):
+    """问接口"这个密钥能用哪些模型"（OpenAI 兼容的 /models），把能用的聊天模型排到最前面；顺便打印余额（不打印密钥）。"""
+    extra = []
+    for base in dict.fromkeys(u.rsplit("/chat/completions", 1)[0] for u, _ in endpoints):
+        try:
+            ids = [m.get("id") for m in _get_json(base + "/models", key).get("data", []) if m.get("id")]
+            print(f"::notice title={name} 可用模型（{base}）::{', '.join(ids[:40]) or '（空）'}", flush=True)
+            chat_ids = [i for i in ids if not re.search(r"embed|vision|tts|audio|image|rerank", i, re.I)]
+            chat_ids.sort(key=lambda i: (("8k" not in i and "turbo" not in i), i))
+            extra += [(base + "/chat/completions", i) for i in chat_ids]
+        except urllib.error.HTTPError as e:
+            print(f"::warning title={name} 查询模型列表失败::{base} → HTTP {e.code} {e.read()[:200]!r}", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"::warning title={name} 查询模型列表失败::{base} → {e}", flush=True)
+        if "moonshot" in base:
+            try:
+                print(f"::notice title={name} 账户余额（{base}）::{json.dumps(_get_json(base + '/users/me/balance', key).get('data'), ensure_ascii=False)}", flush=True)
+            except Exception as e:  # noqa: BLE001
+                print(f"::warning title={name} 查询余额失败::{base} → {e}", flush=True)
+    seen, out = set(), []
+    for ep in extra + list(endpoints):
+        if ep not in seen:
+            seen.add(ep); out.append(ep)
+    return out
+
+
 def pick_endpoint(name, key, endpoints):
     """先用一句话试一下，找到这个密钥能用的接口；都不行就返回 None（并打印原因，不打印密钥）。"""
-    for url, model in endpoints:
+    if name == "kimi":
+        endpoints = discover_models(name, key, endpoints)
+    for url, model in endpoints[:12]:
         try:
             try:
                 chat_once(url, key, model, "Reply with the single word OK.", 0.1)
