@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  RELEASE_TAG: english-classifier-v1
+  RELEASE_TAG: english-classifier-v2
 
 jobs:
   train:
