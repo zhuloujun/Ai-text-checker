@@ -182,6 +182,8 @@ def main():
     ap.add_argument("--out", default=str(Path(__file__).resolve().parent / "data" / "gen_en"))
     ap.add_argument("--n-titles", type=int, default=200, help="每家模型生成多少篇（每篇随机一种段落类型）")
     ap.add_argument("--per-category", type=int, default=40)
+    ap.add_argument("--time-budget-min", type=float, default=260,
+                    help="总时长上限（分钟）：到点就停止生成、保留已生成的部分，避免工作流超时被强行终止而丢掉全部数据")
     args = ap.parse_args()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -201,6 +203,7 @@ def main():
         raise SystemExit("没有抓到 arXiv 摘要")
     titles = [h["title"] for h in human]
 
+    t_start = time.time()
     any_key = False
     for name, (env, endpoints) in PROVIDERS.items():
         key = os.getenv(env, "").strip()
@@ -218,6 +221,9 @@ def main():
         n_new = 0
         with f.open("a", encoding="utf-8") as fh:
             for i, t in enumerate(picks):
+                if (time.time() - t_start) / 60 > args.time_budget_min:
+                    print(f"::warning title={name}::已到时长上限，先保存已生成的 {n_new} 篇（下次运行会接着生成）", flush=True)
+                    break
                 kind, tpl = KINDS[i % len(KINDS)]
                 if f"{t}|{kind}" in done:
                     continue
