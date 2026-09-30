@@ -31,10 +31,16 @@ from pathlib import Path
 # 名称 → (环境变量, [(接口地址, 模型), ...备选])；同一家有多个地址时依次尝试（如 Kimi 国内站 / 国际站）
 PROVIDERS = {
     "deepseek": ("DEEPSEEK_API_KEY", [("https://api.deepseek.com/chat/completions", "deepseek-chat")]),
-    "kimi": ("KIMI_API_KEY", [("https://api.moonshot.cn/v1/chat/completions", "moonshot-v1-8k"),
-                              ("https://api.moonshot.ai/v1/chat/completions", "moonshot-v1-8k")]),
-    "wenxin": ("WENXIN_API_KEY", [("https://qianfan.baidubce.com/v2/chat/completions", "ernie-4.0-turbo-8k"),
-                                  ("https://qianfan.baidubce.com/v2/chat/completions", "ernie-3.5-8k")]),
+    # 旧的 moonshot-v1-8k 在部分账号已下线（2026-09 实测国内站返回 404 “Not found the model”），依次尝试新模型名
+    "kimi": ("KIMI_API_KEY", [(f"https://api.moonshot.{d}/v1/chat/completions", m)
+                              for d in ("cn", "ai")
+                              for m in ("kimi-k2-turbo-preview", "kimi-k2-0905-preview", "kimi-latest",
+                                        "moonshot-v1-8k", "moonshot-v1-auto")]),
+    # 千帆 v2：账号没开通的模型会返回 401 invalid_model；ernie-speed / ernie-lite 通常免费默认可用
+    "wenxin": ("WENXIN_API_KEY", [("https://qianfan.baidubce.com/v2/chat/completions", m)
+                                  for m in ("ernie-4.5-turbo-32k", "ernie-4.5-turbo-128k", "ernie-x1-turbo-32k",
+                                            "ernie-4.0-turbo-8k", "ernie-3.5-8k", "ernie-speed-128k",
+                                            "ernie-speed-8k", "ernie-lite-8k")]),
     "qwen": ("DASHSCOPE_API_KEY", [("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", "qwen-plus")]),
 }
 # 学科尽量宽：经济金融、农业与生物、医学、工程、计算机、社会科学、物理数学
