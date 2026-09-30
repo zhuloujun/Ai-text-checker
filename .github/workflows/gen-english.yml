@@ -25,9 +25,14 @@ jobs:
       - name: 生成
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
+          KIMI_API_KEY: ${{ secrets.KIMI_API_KEY || secrets.MOONSHOT_API_KEY }}
+          WENXIN_API_KEY: ${{ secrets.WENXIN_API_KEY || secrets.APIKey_20260930163541 || secrets.APIKEY_20260930163541 }}
           DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
-        run: python -u server/tools/gen_english_ai.py --n-titles "${{ github.event.inputs.n_titles }}"
+        run: |
+          for v in DEEPSEEK_API_KEY KIMI_API_KEY WENXIN_API_KEY DASHSCOPE_API_KEY; do
+            if [ -n "${!v}" ]; then echo "$v：已设置"; else echo "$v：未设置"; fi
+          done
+          python -u server/tools/gen_english_ai.py --n-titles "${{ github.event.inputs.n_titles || '200' }}"
       - name: 提交
         run: |
           git config user.name "github-actions[bot]"

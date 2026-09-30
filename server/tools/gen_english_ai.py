@@ -9,7 +9,7 @@ DeepSeek / Kimi / 通义千问写的英文论文，所以对它们几乎失灵�
   3. 保存到 tools/data/gen_en/，训练时按"标题"划分训练 / 评估，评估用的题目从不参与训练。
 
 需要的密钥（在 GitHub 仓库 Settings → Secrets and variables → Actions 里添加，有哪个用哪个）：
-  DEEPSEEK_API_KEY（DeepSeek）、MOONSHOT_API_KEY（Kimi）、DASHSCOPE_API_KEY（通义千问）
+  DEEPSEEK_API_KEY（DeepSeek）、KIMI_API_KEY（Kimi）、WENXIN_API_KEY（文心一言 / 百度千帆）、DASHSCOPE_API_KEY（通义千问）
 
 用法：python tools/gen_english_ai.py --out tools/data/gen_en --n-titles 200
 """
@@ -23,14 +23,19 @@ import re
 import sys
 import time
 import urllib.parse
+import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+# 名称 → (环境变量, [(接口地址, 模型), ...备选])；同一家有多个地址时依次尝试（如 Kimi 国内站 / 国际站）
 PROVIDERS = {
-    "deepseek": ("DEEPSEEK_API_KEY", "https://api.deepseek.com/chat/completions", "deepseek-chat"),
-    "kimi": ("MOONSHOT_API_KEY", "https://api.moonshot.cn/v1/chat/completions", "moonshot-v1-8k"),
-    "qwen": ("DASHSCOPE_API_KEY", "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", "qwen-plus"),
+    "deepseek": ("DEEPSEEK_API_KEY", [("https://api.deepseek.com/chat/completions", "deepseek-chat")]),
+    "kimi": ("KIMI_API_KEY", [("https://api.moonshot.cn/v1/chat/completions", "moonshot-v1-8k"),
+                              ("https://api.moonshot.ai/v1/chat/completions", "moonshot-v1-8k")]),
+    "wenxin": ("WENXIN_API_KEY", [("https://qianfan.baidubce.com/v2/chat/completions", "ernie-4.0-turbo-8k"),
+                                  ("https://qianfan.baidubce.com/v2/chat/completions", "ernie-3.5-8k")]),
+    "qwen": ("DASHSCOPE_API_KEY", [("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", "qwen-plus")]),
 }
 # 学科尽量宽：经济金融、农业与生物、医学、工程、计算机、社会科学、物理数学
 CATEGORIES = ["q-fin.GN", "q-fin.ST", "econ.GN", "q-bio.PE", "q-bio.QM", "physics.soc-ph", "cs.CY", "cs.LG",
@@ -71,14 +76,32 @@ def fetch_arxiv(cat: str, n: int) -> list[dict]:
     return out
 
 
-def chat(url, key, model, prompt, temperature):
+def chat_once(url, key, model, prompt, temperature):
     body = json.dumps({"model": model, "messages": [{"role": "user", "content": prompt}],
-                       "temperature": temperature, "max_tokens": 1200}).encode()
+                       "temperature": min(temperature, 1.0), "max_tokens": 1200}).encode()
     req = urllib.request.Request(url, body, {"Content-Type": "application/json", "Authorization": f"Bearer {key}"})
+    with urllib.request.urlopen(req, timeout=120) as r:
+        return json.loads(r.read())["choices"][0]["message"]["content"].strip()
+
+
+def pick_endpoint(name, key, endpoints):
+    """先用一句话试一下，找到这个密钥能用的接口；都不行就返回 None（并打印原因，不打印密钥）。"""
+    for url, model in endpoints:
+        try:
+            chat_once(url, key, model, "Reply with the single word OK.", 0.1)
+            print(f"{name}: 使用 {url} · {model}", flush=True)
+            return url, model
+        except urllib.error.HTTPError as e:
+            print(f"::warning title={name} 接口不可用::{url} {model} → HTTP {e.code} {e.read()[:200]!r}", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"::warning title={name} 接口不可用::{url} {model} → {e}", flush=True)
+    return None
+
+
+def chat(url, key, model, prompt, temperature):
     for attempt in range(4):
         try:
-            with urllib.request.urlopen(req, timeout=120) as r:
-                return json.loads(r.read())["choices"][0]["message"]["content"].strip()
+            return chat_once(url, key, model, prompt, temperature)
         except Exception as e:  # noqa: BLE001
             print(f"  {model} 第 {attempt + 1} 次失败：{e}", flush=True)
             time.sleep(10 * (attempt + 1))
@@ -116,11 +139,15 @@ def main():
     titles = [h["title"] for h in human]
 
     any_key = False
-    for name, (env, url, model) in PROVIDERS.items():
+    for name, (env, endpoints) in PROVIDERS.items():
         key = os.getenv(env, "").strip()
         if not key:
             print(f"未设置 {env}，跳过 {name}", flush=True)
             continue
+        ep = pick_endpoint(name, key, endpoints)
+        if not ep:
+            continue
+        url, model = ep
         any_key = True
         f = out / f"{name}.jsonl"
         done = {json.loads(l)["title"] + "|" + json.loads(l)["kind"] for l in f.read_text("utf-8").splitlines()} if f.exists() else set()
@@ -132,7 +159,7 @@ def main():
                 if f"{t}|{kind}" in done:
                     continue
                 n = rnd.choice([150, 200, 250, 300])
-                text = chat(url, key, model, tpl.format(t=t, n=n), rnd.choice([0.7, 1.0, 1.2]))
+                text = chat(url, key, model, tpl.format(t=t, n=n), rnd.choice([0.6, 0.8, 1.0]))
                 if text and len(text) > 300:
                     fh.write(json.dumps({"title": t, "kind": kind, "model": name, "text": clean(text)}, ensure_ascii=False) + "\n")
                     fh.flush()
@@ -141,7 +168,7 @@ def main():
                     print(f"{name}: {i + 1}/{len(picks)}", flush=True)
         print(f"::notice title={name}::新生成 {n_new} 篇", flush=True)
     if not any_key:
-        print("::warning title=没有可用的 API 密钥::请在仓库 Secrets 里添加 DEEPSEEK_API_KEY / MOONSHOT_API_KEY / DASHSCOPE_API_KEY 之一", flush=True)
+        print("::warning title=没有可用的 API 密钥::请检查仓库 Secrets 里的 DEEPSEEK_API_KEY / KIMI_API_KEY / WENXIN_API_KEY 是否正确、账户是否有余额", flush=True)
         sys.exit(0)
 
 
