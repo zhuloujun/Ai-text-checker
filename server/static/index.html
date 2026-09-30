@@ -126,8 +126,9 @@
       <label class="legend-item filter"><input type="checkbox" id="onlyFlagged"> 只看疑似段落</label>
     </div>
     <p class="label-bar" id="labelBar">检测不准？在段落下方点“这段是 AI / 这段是人写”标注。标注只保存在本浏览器，
-      标好后打开<a href="/admin" target="_blank">管理页 · 校准</a>，登录后点“一键：用我的全部标注校准并保存”，结果会永久保存，让检测更贴合你常用的 AI 工具和你的文风。
-      <span id="labelCount"></span> <button class="link-btn" id="labelClear" type="button">清空标注</button></p>
+      管理员在本浏览器登录过<a href="/admin" target="_blank">管理页</a>（勾选“记住”）后，标注会<b>自动同步并自动重新校准</b>（标完即生效）；否则可在管理页点“一键：用我的全部标注校准并保存”。
+      <span id="labelCount"></span> <button class="link-btn" id="labelClear" type="button">清空标注</button>
+      <br><span id="labelSync" class="label-sync"></span></p>
     <div class="paragraph-list" id="paragraphList"></div>
 
     <div class="section-block" id="formatSection">

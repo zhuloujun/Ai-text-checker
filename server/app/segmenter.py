@@ -315,3 +315,14 @@ _QUOTES = re.compile(r"[“”\"「」『』‘’＂]")
 
 def normalize_classical(text: str) -> str:
     return _QUOTES.sub("", text)
+
+
+# 从网页 / 聊天窗口复制到 Word 时，英文句号后的空格常被吞掉（"income.However"），分词会因此变得很怪，
+# 语言模型和分类器都把它当成"不常见的写法"而偏向人写。英文段落送进模型前补回句间空格（小数、缩写不受影响）。
+_EN_GLUED = re.compile(r"(?<=[a-z%\)\]])([.!?;:])(?=[A-Z][a-z])")
+_EN_NUM_HEAD = re.compile(r"(?m)^(\d+(?:\.\d+)*\.)(?=[A-Z])")
+
+
+def normalize_english(text: str) -> str:
+    text = _EN_GLUED.sub(r"\1 ", text)
+    return _EN_NUM_HEAD.sub(r"\1 ", text)

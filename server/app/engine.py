@@ -15,7 +15,7 @@ from . import config, scoring
 from .detectors import stylometry
 from .detectors.classifier import Classifier, make_english_classifier
 from .detectors.lm_scorer import LMScorer
-from .segmenter import REGISTER_NAMES, detect_register, min_chars, normalize_classical, segment_text
+from .segmenter import REGISTER_NAMES, detect_register, min_chars, normalize_classical, normalize_english, segment_text
 
 log = logging.getLogger("engine")
 
@@ -53,7 +53,11 @@ def score_text(seg) -> str:
         rest = seg.text[len(seg.title):].strip()
         if len(rest) >= 10:
             text = rest
-    return normalize_classical(text) if seg.register == "zh_classical" else text
+    if seg.register == "zh_classical":
+        return normalize_classical(text)
+    if seg.register == "en":
+        return normalize_english(text)
+    return text
 
 
 def works_summary(seg_out: list) -> list:
@@ -587,6 +591,10 @@ class JobQueue:
                                                         p.get("flag_quotations", True), progress)
                 elif job["kind"] == "calibrate":
                     job["result"] = run_calibration(self.engine, p, progress)
+                elif job["kind"] == "autocalibrate":
+                    res = run_calibration(self.engine, p, progress)
+                    saved, _ = apply_user_calibration(self.engine, res["calibration"])
+                    job["result"] = {"report": res["report"], "saved": saved}
                 job["status"] = "done"
             except Exception as e:  # noqa: BLE001
                 log.exception("job %s failed", jid)
@@ -595,6 +603,109 @@ class JobQueue:
                 job["finished"] = time.time()
                 job["payload"] = {}
                 job["progress"] = 1.0 if job["status"] == "done" else job["progress"]
+
+
+def apply_user_calibration(engine: Engine, cal: dict):
+    """启用并永久保存某一文体的用户校准（只替换这一文体）。返回 (是否保存成功, 已有用户校准的文体)。"""
+    prof = cal.get("profile") or "zh"
+    user = config.load_user_profiles()
+    user[prof] = {k: v for k, v in cal.items() if k != "profiles"}
+    saved = config.save_user_profiles(user)
+    engine.reload_calibration()
+    return saved, user
+
+
+class AutoCalibrator:
+    """"标完自动生效"：管理员在报告页上的每一次标注都同步到服务器（永久保存），
+    停手 AUTO_CALIBRATE_DELAY 秒后，用服务器上这一文体的全部标注自动重新校准并启用——越标越准。"""
+
+    def __init__(self, engine: Engine, jobs: "JobQueue"):
+        self.engine, self.jobs = engine, jobs
+        self.lock = threading.Lock()
+        self.timers: dict[str, threading.Timer] = {}
+        self.last: dict[str, dict] = {}
+        self.labels: dict = config.load_json_file(config.USER_LABELS_FILE, {}).get("labels", {})
+
+    def _save(self):
+        config.save_json_file(config.USER_LABELS_FILE, {"format": "user_labels_v1", "labels": self.labels})
+
+    def update(self, items: list[dict]) -> set:
+        regs = set()
+        with self.lock:
+            for it in items:
+                key = str(it.get("key") or "")[:64]
+                if not key:
+                    continue
+                old = self.labels.get(key)
+                if it.get("label") in ("ai", "human") and (it.get("text") or "").strip():
+                    reg = it.get("register") if it.get("register") in REGISTER_NAMES else "zh"
+                    self.labels[key] = {"text": it["text"][:20000], "register": reg, "label": it["label"],
+                                        "ts": time.time()}
+                    regs.add(reg)
+                elif old:
+                    del self.labels[key]
+                if old:
+                    regs.add(old["register"])
+            self._save()
+        for reg in regs:
+            self.schedule(reg)
+        return regs
+
+    def clear(self):
+        with self.lock:
+            self.labels = {}
+            self._save()
+
+    def schedule(self, reg: str, delay: float | None = None):
+        with self.lock:
+            t = self.timers.pop(reg, None)
+            if t:
+                t.cancel()
+            t = threading.Timer(config.AUTO_CALIBRATE_DELAY if delay is None else delay, self._fire, args=(reg,))
+            t.daemon = True
+            self.timers[reg] = t
+            self.last.setdefault(reg, {})["status"] = "scheduled"
+            t.start()
+
+    def _fire(self, reg: str):
+        with self.lock:
+            self.timers.pop(reg, None)
+            items = [v for v in self.labels.values() if v["register"] == reg]
+        if not items:
+            user = config.load_user_profiles()
+            if reg in user:     # 这一文体的标注都撤掉了：恢复内置默认校准
+                del user[reg]
+                config.save_user_profiles(user)
+                self.engine.reload_calibration()
+            self.last[reg] = {"status": "cleared", "time": time.time()}
+            return
+        cur_user = config.load_user_profiles().get(reg) or {}
+        payload = {"human": [v["text"] for v in items if v["label"] == "human"],
+                   "ai": [v["text"] for v in items if v["label"] == "ai"],
+                   "profile": reg, "include_builtin": True, "trust_register": True, "target_fpr": 0.05,
+                   # 诗词：管理员之前选过"计入 AI 率"就保持计入
+                   "count_in_rate": bool(cur_user) and not cur_user.get("reference_only")}
+        job = self.jobs.submit("autocalibrate", "admin", payload)
+        self.last[reg] = {"status": "running", "job": job["id"], "time": time.time()}
+
+    def status(self) -> dict:
+        with self.lock:
+            counts: dict = {}
+            for v in self.labels.values():
+                c = counts.setdefault(v["register"], {"ai": 0, "human": 0})
+                c[v["label"]] += 1
+            last = {k: dict(v) for k, v in self.last.items()}
+        for v in last.values():
+            j = self.jobs.get(v.get("job", "")) if v.get("job") else None
+            if j:
+                v["status"] = {"done": "done", "error": "error"}.get(j["status"], "running")
+                v["error"] = j.get("error")
+                rep = (j.get("result") or {}).get("report") or {}
+                if rep:
+                    v["user_samples"] = rep.get("user_samples")
+                    v["human_flagged_rate"] = rep.get("human_flagged_rate")
+        return {"total": len(self.labels), "by_register": counts, "last": last,
+                "delay_sec": config.AUTO_CALIBRATE_DELAY}
 
 
 def load_builtin_calib(profile: str) -> list[dict]:

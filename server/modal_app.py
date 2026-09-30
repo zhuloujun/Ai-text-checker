@@ -41,6 +41,7 @@ image = (
         "POETRY_CLASSIFIER_MODEL": POETRY_DIR if HAS_POETRY else "",
         "CLASSICAL_CLASSIFIER_MODEL": CLASSICAL_DIR if HAS_CLASSICAL else "",
         "USER_CALIBRATION_FILE": "/data/user_calibration.json",
+        "USER_LABELS_FILE": "/data/user_labels.json",
         "CALIBRATION_VOLUME": "ai-text-checker-data",
     })
     # 构建镜像时就把模型下载进去，启动时不用再下载

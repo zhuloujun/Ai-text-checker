@@ -17,6 +17,8 @@ on:
       - "!server/tools/train_poetry.py"
       - "!server/tools/train_classical.py"
       - "!server/tools/train_poetry2.py"
+      - "!server/tools/gen_english_ai.py"
+      - "!server/tools/data/gen_en/**"
       - "!server/tools/compare_experiment.py"
       - ".github/workflows/evaluate.yml"
   workflow_dispatch:

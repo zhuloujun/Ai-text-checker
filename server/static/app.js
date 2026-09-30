@@ -410,10 +410,32 @@ function labelKey(text){
 }
 function loadLabels(){ try{ return JSON.parse(localStorage.getItem(LABEL_KEY) || '{}'); }catch(e){ return {}; } }
 function saveLabels(m){ try{ localStorage.setItem(LABEL_KEY, JSON.stringify(m)); }catch(e){} updateLabelCount(); }
+/* 管理员在本浏览器登录过管理页（并选择记住）时，标注自动同步到服务器，停手片刻后自动重新校准（"标完自动生效"） */
+const ADMIN_KEY = 'shendu_admin';
+function adminToken(){ try{ return localStorage.getItem(ADMIN_KEY) || ''; }catch(e){ return ''; } }
+let labelSyncTimer = null, labelSyncQueue = {};
+function queueLabelSync(k, item){
+  if(!adminToken()) return;
+  labelSyncQueue[k] = item;
+  clearTimeout(labelSyncTimer);
+  labelSyncTimer = setTimeout(flushLabelSync, 800);
+}
+async function flushLabelSync(){
+  const items = Object.entries(labelSyncQueue).map(([key, v])=>({ key, text: v.text, register: v.register, label: v.label }));
+  labelSyncQueue = {};
+  if(!items.length) return;
+  const el = $('labelSync');
+  try{
+    const r = await fetch('/admin/api/labels', { method:'POST', headers:{ 'Content-Type':'application/json', 'X-Admin-Token': adminToken() }, body: JSON.stringify({ items }) });
+    if(r.status === 401){ try{ localStorage.removeItem(ADMIN_KEY); }catch(e){} if(el) el.textContent = '管理员身份已失效，标注只保存在本浏览器。'; return; }
+    const d = await r.json();
+    if(el) el.textContent = `已同步到服务器（共 ${d.total} 段标注），约 ${Math.round(d.delay_sec)} 秒后自动重新校准，之后的检测会按新标准判断。`;
+  }catch(e){ if(el) el.textContent = '同步失败（网络问题），标注已保存在本浏览器，下次标注时会再试。'; }
+}
 function setLabel(seg, lab){
   const m = loadLabels(), k = labelKey(seg.text);
-  if(m[k] && m[k].label === lab) delete m[k];            // 再点一次取消
-  else m[k] = { text: seg.text, register: seg.register || 'zh', label: lab, source: currentSource, ts: Date.now() };
+  if(m[k] && m[k].label === lab){ delete m[k]; queueLabelSync(k, { text: seg.text, register: seg.register || 'zh', label: null }); }   // 再点一次取消
+  else { m[k] = { text: seg.text, register: seg.register || 'zh', label: lab, source: currentSource, ts: Date.now() }; queueLabelSync(k, m[k]); }
   saveLabels(m);
 }
 function paintLabel(el){
@@ -432,6 +454,7 @@ $('labelClear') && $('labelClear').addEventListener('click', ()=>{
   paragraphList.querySelectorAll('.para-label').forEach(paintLabel);
 });
 updateLabelCount();
+if($('labelSync')) $('labelSync').textContent = adminToken() ? '已开启“标完自动生效”：你的标注会同步到服务器并自动重新校准。' : '';
 
 function applyFilter(){
   const only = $('onlyFlagged').checked;

@@ -35,7 +35,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import config, docparse, keys, scoring
-from .engine import Engine, JobQueue
+from .engine import AutoCalibrator, Engine, JobQueue, apply_user_calibration
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("main")
@@ -44,6 +44,7 @@ STATIC = config.BASE_DIR / "static"
 app = FastAPI(title="Ai-text-checker", version="2.0", docs_url="/docs", redoc_url=None)
 engine = Engine()
 jobs = JobQueue(engine)
+autocal = AutoCalibrator(engine, jobs)
 threading.Thread(target=engine.load_all, daemon=True).start()
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
@@ -299,15 +300,38 @@ def admin_apply(body: CalibrationIn, request: Request, x_admin_token: str | None
     if "signals" not in cal or "threshold" not in cal:
         err(400, "bad_calibration", "校准参数格式不正确。")
     # 只替换这次校准的文体，其他文体的校准保持不变；并永久保存（服务重启后仍有效）
-    prof = cal.get("profile") or "zh"
-    user = config.load_user_profiles()
-    user[prof] = {k: v for k, v in cal.items() if k != "profiles"}
-    saved = config.save_user_profiles(user)
-    engine.reload_calibration()
+    saved, user = apply_user_calibration(engine, cal)
     names = "、".join(scoring.PROFILE_NAMES.get(p, p) for p in user)
     return {"ok": True, "calibration": engine.cal, "saved": saved,
             "message": (f"已启用并永久保存（服务重启后仍然有效）。目前使用你自己标注校准的文体：{names}。" if saved else
                         "已启用，但保存失败：服务重启后会恢复默认校准。")}
+
+
+class LabelsIn(BaseModel):
+    items: list[dict] = Field(..., description="[{key, text, register, label: ai / human / null(撤销)}]")
+
+
+@app.post("/admin/api/labels")
+def admin_labels(body: LabelsIn, request: Request, x_admin_token: str | None = Header(None)):
+    """报告页上管理员的标注：同步到服务器永久保存，停手片刻后自动重新校准对应文体。"""
+    require_admin(request, x_admin_token)
+    if len(body.items) > 2000:
+        err(413, "too_many", "一次最多同步 2000 条标注。")
+    regs = autocal.update(body.items)
+    return {"ok": True, "registers": sorted(regs), **autocal.status()}
+
+
+@app.get("/admin/api/labels")
+def admin_labels_status(request: Request, x_admin_token: str | None = Header(None)):
+    require_admin(request, x_admin_token)
+    return autocal.status()
+
+
+@app.delete("/admin/api/labels")
+def admin_labels_clear(request: Request, x_admin_token: str | None = Header(None)):
+    require_admin(request, x_admin_token)
+    autocal.clear()
+    return {"ok": True, "message": "已清空服务器上的标注（已启用的校准不变；如需恢复默认，请再点“恢复默认校准”）。"}
 
 
 @app.delete("/admin/api/calibration")

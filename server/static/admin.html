@@ -37,11 +37,14 @@
 
   <section class="card">
     <h2>管理员登录</h2>
-    <p class="hint">输入你在 GitHub 仓库 Secrets 里设置的 <code>HF_ADMIN_TOKEN</code>（即服务的管理员密码 <code>ADMIN_TOKEN</code>）。密码只保存在这个页面的内存里，刷新后需重新输入。</p>
+    <p class="hint">输入你在 GitHub 仓库 Secrets 里设置的 <code>HF_ADMIN_TOKEN</code>（即服务的管理员密码 <code>ADMIN_TOKEN</code>）。</p>
     <div class="form-row">
       <label style="flex:1">管理员密码<input type="password" id="adminToken" autocomplete="current-password"></label>
+      <label><input type="checkbox" id="rememberAdmin" checked> 在本浏览器记住（开启“标完自动生效”）</label>
       <button class="primary-btn" id="loginBtn">登录</button>
+      <button class="ghost-btn" id="logoutBtn" type="button">退出并忘记</button>
     </div>
+    <p class="hint">勾选“记住”后，你在检测报告里点“这段是 AI / 这段是人写”，标注会自动同步到服务器，停手约 20 秒后自动重新校准对应文体并永久生效。只在你自己的电脑上勾选。</p>
     <p class="msg" id="loginMsg"></p>
   </section>
 
@@ -70,6 +73,15 @@
 
   <section class="card needs-login">
     <h2>校准</h2>
+    <div class="auto-cal">
+      <p class="hint"><strong>标完自动生效：</strong><span id="autoStatus">登录后显示</span></p>
+      <div class="form-row">
+        <button class="ghost-btn" id="syncLabels" type="button">把本浏览器的全部标注同步到服务器</button>
+        <button class="ghost-btn" id="clearServerLabels" type="button">清空服务器上的标注</button>
+      </div>
+      <p class="msg" id="autoMsg"></p>
+      <hr>
+    </div>
     <div class="quick-cal">
       <p class="hint"><strong>最简单的做法（推荐）：</strong>先在首页检测几篇你确定来源的文章，在每段下方点“这段是 AI / 这段是人写”，然后回到这里点下面的按钮。
       系统会把你的标注按文体（现代汉语 / 文言 / 诗词 / 英文）分别与内置公开数据合并校准，并<strong>永久保存</strong>（服务重启后仍然有效）。标注越多、AI 和人写两类都有，效果越好。</p>

@@ -11,17 +11,58 @@ async function call(path, opts = {}){
 }
 function msg(el, text, ok){ el.textContent = text; el.className = 'msg ' + (ok ? 'good' : 'bad'); }
 
-$('loginBtn').addEventListener('click', async ()=>{
-  token = $('adminToken').value;
+const ADMIN_KEY = 'shendu_admin';
+async function doLogin(silent){
   try{
     await call('/admin/api/usage');
     $('sheet').classList.remove('locked');
-    msg($('loginMsg'), '已登录。', true);
+    if($('rememberAdmin').checked){ try{ localStorage.setItem(ADMIN_KEY, token); }catch(e){} }
+    msg($('loginMsg'), $('rememberAdmin').checked ? '已登录，并已在本浏览器开启“标完自动生效”。' : '已登录。', true);
     renderUsage();
+    if($('rememberAdmin').checked) await syncAllLabels(true);
+    renderAuto();
+    return true;
   }catch(e){
     $('sheet').classList.add('locked');
-    msg($('loginMsg'), e.message, false);
+    if(!silent) msg($('loginMsg'), e.message, false);
+    return false;
   }
+}
+const REG_NAMES_ALL = { zh:'现代汉语', zh_classical:'文言', zh_poetry:'诗词', en:'英文' };
+async function renderAuto(){
+  try{
+    const d = await call('/admin/api/labels');
+    const regs = Object.entries(d.by_register).map(([k,v])=>`${REG_NAMES_ALL[k]||k}（AI ${v.ai} · 人写 ${v.human}）`).join('、') || '暂无';
+    const last = Object.entries(d.last).map(([k,v])=>`${REG_NAMES_ALL[k]||k}：${{scheduled:'等待中',running:'校准中',done:'已完成',error:'出错',cleared:'已恢复默认'}[v.status]||v.status}${v.user_samples && v.user_samples.n_ai ? `（你的 AI 段落识别出 ${(v.user_samples.ai_caught_rate*100).toFixed(0)}%）` : ''}`).join('；');
+    $('autoStatus').textContent = `${localStorage.getItem(ADMIN_KEY) ? '已在本浏览器开启' : '本浏览器未开启（登录时勾选“记住”即可开启）'} · 服务器上的标注共 ${d.total} 段：${regs}` + (last ? ` · 最近自动校准：${last}` : '');
+  }catch(e){}
+}
+async function syncAllLabels(quiet){
+  let m = {};
+  try{ m = JSON.parse(localStorage.getItem('shendu_labels') || '{}'); }catch(e){}
+  const items = Object.entries(m).map(([key, v])=>({ key, text: v.text, register: v.register, label: v.label }));
+  if(!items.length){ if(!quiet) msg($('autoMsg'), '本浏览器里还没有标注。', false); return; }
+  try{
+    const d = await call('/admin/api/labels', { method:'POST', body: JSON.stringify({ items }) });
+    msg($('autoMsg'), `已同步 ${items.length} 段标注到服务器，约 ${Math.round(d.delay_sec)} 秒后自动重新校准。`, true);
+  }catch(e){ msg($('autoMsg'), e.message, false); }
+}
+$('syncLabels').addEventListener('click', ()=>syncAllLabels(false).then(renderAuto));
+$('clearServerLabels').addEventListener('click', async ()=>{
+  if(!confirm('清空服务器上保存的全部标注？（浏览器里的标注和已启用的校准不受影响）')) return;
+  try{ const d = await call('/admin/api/labels', { method:'DELETE' }); msg($('autoMsg'), d.message, true); renderAuto(); }
+  catch(e){ msg($('autoMsg'), e.message, false); }
+});
+$('logoutBtn').addEventListener('click', ()=>{
+  try{ localStorage.removeItem(ADMIN_KEY); }catch(e){}
+  token = ''; $('sheet').classList.add('locked');
+  msg($('loginMsg'), '已退出，本浏览器不再记住管理员身份（标注只保存在本浏览器）。', true);
+});
+setInterval(()=>{ if(token) renderAuto(); }, 15000);
+
+$('loginBtn').addEventListener('click', async ()=>{
+  token = $('adminToken').value;
+  await doLogin(false);
 });
 $('adminToken').addEventListener('keydown', e=>{ if(e.key === 'Enter') $('loginBtn').click(); });
 
@@ -203,3 +244,6 @@ $('resetCal').addEventListener('click', async ()=>{
   try{ const d = await call('/admin/api/calibration', { method:'DELETE' }); msg($('quickMsg'), d.message, true); }
   catch(e){ msg($('quickMsg'), e.message, false); }
 });
+
+/* 本浏览器记住了管理员身份时自动登录 */
+(function(){ let t = ''; try{ t = localStorage.getItem(ADMIN_KEY) || ''; }catch(e){} if(t){ token = t; $('adminToken').value = t; doLogin(true); } })();

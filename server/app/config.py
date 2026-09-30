@@ -157,21 +157,39 @@ def load_user_profiles() -> dict:
             if isinstance(c, dict) and _models_match(c, p)}
 
 
-def save_user_profiles(profiles: dict) -> bool:
-    """写入并提交到持久卷。返回是否成功永久保存。"""
-    try:
-        USER_CALIBRATION_FILE.parent.mkdir(parents=True, exist_ok=True)
-        USER_CALIBRATION_FILE.write_text(json.dumps({"format": "user_profiles_v1", "profiles": profiles},
-                                                    ensure_ascii=False, indent=1), "utf-8")
-    except OSError:
-        return False
+USER_LABELS_FILE = Path(os.getenv("USER_LABELS_FILE", str(BASE_DIR / "user_labels.json")))
+AUTO_CALIBRATE_DELAY = float(os.getenv("AUTO_CALIBRATE_DELAY", "20"))   # 最后一次标注后等这么多秒再自动校准（连续标注只算一次）
+
+
+def _commit_volume():
     if CALIBRATION_VOLUME:
         try:
             import modal
             modal.Volume.from_name(CALIBRATION_VOLUME).commit()
         except Exception:  # noqa: BLE001  提交失败时，容器正常退出时 Modal 也会自动提交
             pass
+
+
+def load_json_file(path: Path, default):
+    try:
+        return json.loads(Path(path).read_text("utf-8"))
+    except (OSError, ValueError):
+        return default
+
+
+def save_json_file(path: Path, obj) -> bool:
+    try:
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        Path(path).write_text(json.dumps(obj, ensure_ascii=False, indent=1), "utf-8")
+    except OSError:
+        return False
+    _commit_volume()
     return True
+
+
+def save_user_profiles(profiles: dict) -> bool:
+    """写入并提交到持久卷。返回是否成功永久保存。"""
+    return save_json_file(USER_CALIBRATION_FILE, {"format": "user_profiles_v1", "profiles": profiles})
 
 
 def load_calibration_override():

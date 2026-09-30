@@ -17,6 +17,7 @@ os.environ.update({
     "ADMIN_TOKEN": "test-admin-pw", "LM_MAX_TOKENS": "128", "CALIBRATION_FILE": "/nonexistent/cal.json",
     "MAX_TEXT_CHARS": "300000",
     "USER_CALIBRATION_FILE": f"/tmp/test_user_calibration_{os.getpid()}.json",
+    "USER_LABELS_FILE": f"/tmp/test_user_labels_{os.getpid()}.json", "AUTO_CALIBRATE_DELAY": "0.3",
 })
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -634,3 +635,44 @@ def test_paper_sections_stay_in_one_work_and_merge_to_long_windows():
     # 真正的新作品（书名号标题）仍然分开
     two = "《甲篇》\n\n" + MODERN * 2 + "\n\n《乙篇》\n\n" + MODERN * 2
     assert len({s.block for s in segment_text(two, True, True)}) == 2
+
+
+def test_labels_sync_and_auto_calibrate(client, monkeypatch):
+    """"标完自动生效"：管理员的标注同步到服务器，停手片刻后自动校准并启用；全部撤销后恢复默认。"""
+    import random
+    from app import config
+    from app import engine as eng
+    from app.main import autocal, engine
+    rnd = random.Random(3)
+    fake = ([{"y": 0, "s": {"fastdetect": rnd.gauss(0, 1), "binoculars": rnd.gauss(1.0, .05), "classifier": rnd.uniform(.01, .4)}} for _ in range(60)]
+            + [{"y": 1, "s": {"fastdetect": rnd.gauss(2.5, 1), "binoculars": rnd.gauss(.85, .05), "classifier": rnd.uniform(.6, .99)}} for _ in range(60)])
+    monkeypatch.setattr(eng, "load_builtin_calib", lambda profile: fake)
+    config.save_user_profiles({})
+    engine.reload_calibration()
+    items = [{"key": f"k{i}", "text": CLASSICAL + str(i), "register": "zh_classical", "label": "ai"} for i in range(3)]
+    r = client.post("/admin/api/labels", json={"items": items}, headers=ADMIN)
+    assert r.status_code == 200 and r.json()["by_register"]["zh_classical"]["ai"] == 3
+    for _ in range(120):
+        time.sleep(0.25)
+        if "zh_classical" in config.load_user_profiles():
+            break
+    assert "zh_classical" in config.load_user_profiles()
+    assert "标注" in engine.cal_source
+    st = client.get("/admin/api/labels", headers=ADMIN).json()
+    assert st["last"]["zh_classical"]["status"] in ("done", "running")
+    # 撤销全部标注 → 恢复默认
+    client.post("/admin/api/labels", json={"items": [dict(it, label=None) for it in items]}, headers=ADMIN)
+    for _ in range(40):
+        time.sleep(0.2)
+        if "zh_classical" not in config.load_user_profiles():
+            break
+    assert "zh_classical" not in config.load_user_profiles()
+    assert client.post("/admin/api/labels", json={"items": items}).status_code == 401
+    autocal.clear()
+
+
+def test_english_glued_sentences_are_respaced():
+    from app.segmenter import normalize_english
+    assert normalize_english("growth trend.However, prices rose.The yield was 3.8 kg.") == \
+        "growth trend. However, prices rose. The yield was 3.8 kg."
+    assert normalize_english("1.Introduction") == "1. Introduction"

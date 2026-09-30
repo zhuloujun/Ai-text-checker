@@ -1,0 +1,37 @@
+# 用国产大模型的 API 批量生成英文学术文字（DeepSeek / Kimi / 通义千问，有哪个密钥用哪个），
+# 并抓取同题材的 arXiv 真人摘要，结果提交到 server/tools/data/gen_en/，供训练英文检测模型使用。
+# 只能在 Actions 页面手动运行（Run workflow）。
+name: 生成英文 AI 训练数据
+
+on:
+  workflow_dispatch:
+    inputs:
+      n_titles:
+        description: "每家模型生成多少篇"
+        default: "200"
+
+permissions:
+  contents: write
+
+jobs:
+  gen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 生成
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
+          DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
+        run: python -u server/tools/gen_english_ai.py --n-titles "${{ github.event.inputs.n_titles }}"
+      - name: 提交
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server/tools/data/gen_en
+          git commit -m "Add generated English AI training data" || exit 0
+          git pull --rebase origin main && git push origin HEAD:main
