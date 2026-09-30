@@ -43,7 +43,7 @@ env:
   N_CL_HUMAN_TEST: "160"
   N_PO_CAL: "800"
   N_PO_TEST: "600"
-  PUSH_PARTS: '["cl_cal","cl_test","cl_user"]'
+  PUSH_PARTS: '["en_cal1","en_cal2","en_ood","en_para","en_user"]'
 
 jobs:
   plan:

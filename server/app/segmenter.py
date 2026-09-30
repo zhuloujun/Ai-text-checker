@@ -76,6 +76,24 @@ def is_title(line: str) -> bool:
     return bool(_TITLE_MARK.search(s))
 
 
+# 论文里的章节标题（"1. Introduction""2.2 Anomalies""一、研究背景""（二）""摘要""References"……）：
+# 它们是同一篇文章内部的分节，不是新作品——不应把一篇论文切成十几篇互不相干的"作品"
+_SECTION_NUM = re.compile(r"^(\d+(\.\d+)*[.、．]?\s*\S|[IVX]{1,5}[.、]\s*\S|[一二三四五六七八九十]+、|（[一二三四五六七八九十\d]+）|第[一二三四五六七八九十百\d]+[章节部分])")
+_SECTION_NAMES = re.compile(
+    r"^(#{1,6}\s*)?(abstract|introduction|background|literature review|related work|theoretical framework|method(s|ology)?|"
+    r"data( and methods?)?|results?|findings|analysis|discussion|conclusions?|limitations|future work|keywords?|"
+    r"acknowledge?ments?|appendix|摘\s*要|关键词|引\s*言|绪\s*论|前\s*言|文献综述|研究方法|研究设计|结\s*论|结\s*语|讨\s*论|致\s*谢|附\s*录)"
+    r"\b.{0,50}$", re.I)
+_RULE_LINE = re.compile(r"^[-—_*=~·\s]{3,}$")
+
+
+def is_section_heading(line: str) -> bool:
+    s = line.strip()
+    if not s or len(s) > 60 or s.startswith("《"):
+        return False
+    return bool(_SECTION_NUM.match(s) or _SECTION_NAMES.match(s))
+
+
 def _body_lines(text: str) -> str:
     """去掉标题行，只看正文（判断文体时用）。"""
     lines = [l for l in text.splitlines() if l.strip()]
@@ -210,11 +228,12 @@ def segment_text(text: str, exclude_references: bool = True, flag_quotations: bo
             if len(buf) > target * 4:
                 flush("reference")
             continue
-        if not stripped:
+        if not stripped or _RULE_LINE.match(stripped):
             if buf.strip():
                 pending_break = True
             continue
-        title = is_title(stripped)
+        section = is_section_heading(stripped)
+        title = is_title(stripped) and not section
         if buf.strip():
             reg = detect_register(buf)
             if title and not (buf.strip() and is_title(buf.strip().splitlines()[-1])):
@@ -224,7 +243,8 @@ def segment_text(text: str, exclude_references: bool = True, flag_quotations: bo
             elif len(stripped) >= 30 and len(buf.strip()) >= 30 and detect_register(stripped) != reg:
                 # 文体切换（如现代文里插入一段文言引文、中文里夹一段英文）时另起一段
                 flush()
-            elif pending_break and len(buf) >= flush_chars(reg):
+            elif (pending_break or section) and len(buf) >= flush_chars(reg):
+                # 章节标题相当于一次段落分隔：窗口够长就另起一段，否则与下一节合并（仍属同一篇作品）
                 flush()
         elif title and segments:
             block += 1

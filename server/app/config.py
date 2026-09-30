@@ -59,7 +59,7 @@ SEGMENT_MIN_CHARS_EN = _int("SEGMENT_MIN_CHARS_EN", 200)
 # 遇到段落分隔时，窗口不足这么长就与下一段合并（同一作品、同一文体内）
 SEGMENT_FLUSH_CHARS = _int("SEGMENT_FLUSH_CHARS", 200)
 SEGMENT_FLUSH_CHARS_CLASSICAL = _int("SEGMENT_FLUSH_CHARS_CLASSICAL", 120)
-SEGMENT_FLUSH_CHARS_EN = _int("SEGMENT_FLUSH_CHARS_EN", 600)
+SEGMENT_FLUSH_CHARS_EN = _int("SEGMENT_FLUSH_CHARS_EN", 1000)   # 约 170 词：英文分类器在 1000 字符以上的窗口明显更准（AUROC 0.93 → 0.95+）
 # 现代汉语段落短于这个字数时，改用"短段"校准（有的话）：短文本信号弱，需要单独的阈值
 SHORT_SEGMENT_CHARS = _int("SHORT_SEGMENT_CHARS", 200)
 # 篇幅短的提示（Turnitin 要求英文至少 300 词才给结果；这里对单段放宽，只做标注）

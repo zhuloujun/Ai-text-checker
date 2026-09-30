@@ -620,3 +620,17 @@ def test_classical_text_fed_to_models_has_no_quotes():
     s = [x for x in segs if x.register == "zh_classical"][0]
     t = score_text(s)
     assert not any(q in t for q in "“”\"「」") and "生曰：善。" in t
+
+
+def test_paper_sections_stay_in_one_work_and_merge_to_long_windows():
+    """论文的章节标题（1. Introduction / 2.2 … / Abstract）不应把一篇论文切成多篇作品；英文短节合并成 ≥1000 字符的窗口。"""
+    para = ("Stock prices respond to news in ways that are partly predictable, and many studies document "
+            "momentum over months and reversal over years across markets and periods. ")
+    doc = "An Analysis of Markets\n\nAbstract\n" + para * 3 + "\n\n1. Introduction\n" + para * 2 + \
+          "\n\n2.1 Efficient Markets\n" + para * 2 + "\n\n2.2 Anomalies\n" + para * 2 + "\n\n3. Methodology\n" + para * 2
+    segs = [s for s in segment_text(doc, True, True) if s.kind == "body"]
+    assert len({s.block for s in segs}) == 1
+    assert all(len(s.text) >= 900 for s in segs[:-1])
+    # 真正的新作品（书名号标题）仍然分开
+    two = "《甲篇》\n\n" + MODERN * 2 + "\n\n《乙篇》\n\n" + MODERN * 2
+    assert len({s.block for s in segment_text(two, True, True)}) == 2
