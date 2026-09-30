@@ -34,8 +34,8 @@ PROVIDERS = {
     # 旧的 moonshot-v1-8k 在部分账号已下线（2026-09 实测国内站返回 404 “Not found the model”），依次尝试新模型名
     "kimi": ("KIMI_API_KEY", [(f"https://api.moonshot.{d}/v1/chat/completions", m)
                               for d in ("cn", "ai")
-                              for m in ("kimi-k2-turbo-preview", "kimi-k2-0905-preview", "kimi-latest",
-                                        "moonshot-v1-8k", "moonshot-v1-auto")]),
+                              for m in ("moonshot-v1-8k", "moonshot-v1-auto", "kimi-k2-turbo-preview",
+                                        "kimi-k2-0905-preview", "kimi-latest")]),
     # 千帆 v2：账号没开通的模型会返回 401 invalid_model；ernie-speed / ernie-lite 通常免费默认可用
     "wenxin": ("WENXIN_API_KEY", [("https://qianfan.baidubce.com/v2/chat/completions", m)
                                   for m in ("ernie-4.5-turbo-32k", "ernie-4.5-turbo-128k", "ernie-x1-turbo-32k",
@@ -82,7 +82,22 @@ def fetch_arxiv(cat: str, n: int) -> list[dict]:
     return out
 
 
+# 每家最少请求间隔（秒）：Kimi 未充值账号限速每分钟 3 次（2026-09 实测 HTTP 429 “max RPM: 3”）
+MIN_INTERVAL = {"api.moonshot": 21.0}
+_last_call = {}
+
+
+def _throttle(url):
+    for k, gap in MIN_INTERVAL.items():
+        if k in url:
+            wait = _last_call.get(k, 0) + gap - time.time()
+            if wait > 0:
+                time.sleep(wait)
+            _last_call[k] = time.time()
+
+
 def chat_once(url, key, model, prompt, temperature):
+    _throttle(url)
     body = json.dumps({"model": model, "messages": [{"role": "user", "content": prompt}],
                        "temperature": min(temperature, 1.0), "max_tokens": 1200}).encode()
     req = urllib.request.Request(url, body, {"Content-Type": "application/json", "Authorization": f"Bearer {key}"})
@@ -94,7 +109,13 @@ def pick_endpoint(name, key, endpoints):
     """先用一句话试一下，找到这个密钥能用的接口；都不行就返回 None（并打印原因，不打印密钥）。"""
     for url, model in endpoints:
         try:
-            chat_once(url, key, model, "Reply with the single word OK.", 0.1)
+            try:
+                chat_once(url, key, model, "Reply with the single word OK.", 0.1)
+            except urllib.error.HTTPError as e:
+                if e.code != 429:
+                    raise
+                time.sleep(30)          # 被限速：等一会儿再试一次
+                chat_once(url, key, model, "Reply with the single word OK.", 0.1)
             print(f"{name}: 使用 {url} · {model}", flush=True)
             return url, model
         except urllib.error.HTTPError as e:
@@ -110,7 +131,7 @@ def chat(url, key, model, prompt, temperature):
             return chat_once(url, key, model, prompt, temperature)
         except Exception as e:  # noqa: BLE001
             print(f"  {model} 第 {attempt + 1} 次失败：{e}", flush=True)
-            time.sleep(10 * (attempt + 1))
+            time.sleep(30 if "429" in str(e) else 10 * (attempt + 1))
     return None
 
 
