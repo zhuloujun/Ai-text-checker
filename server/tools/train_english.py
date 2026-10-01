@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import evaluate as ev  # noqa: E402
 
 GEN_DIR = ev.DATA_DIR / "gen_en"
-HUMAN_FILES = {"arxiv_human", "pubmed_human"}
+HUMAN_FILES = {"arxiv_human", "pubmed_human", "pmc_human"}
 
 
 def split_of(key: str) -> str:
@@ -62,6 +62,8 @@ def build_rows(args, rnd):
         raw.append((h["text"], 0, "arxiv-human", split_of(h["title"]), 1))
     for h in load_jsonl(GEN_DIR / "pubmed_human.jsonl"):
         raw.append((h["text"], 0, "pubmed-human-cn" if h.get("cn") else "pubmed-human", split_of(h["title"]), 1))
+    for h in load_jsonl(GEN_DIR / "pmc_human.jsonl"):      # 真人论文正文（引言、方法、结果、讨论），每篇取 4 个窗口
+        raw.append((h["text"], 0, "pmc-human-cn" if h.get("cn") else "pmc-human", split_of(h["title"]), 4))
     gen_models = []
     for f in sorted(GEN_DIR.glob("*.jsonl")):
         if f.stem in HUMAN_FILES:
@@ -210,11 +212,23 @@ def main():
     res.update({"n_train": len(train), "n_test": len(test), "test_by_source": by(test), "gen_models": gen_models,
                 "base": args.base, "epochs": args.epochs, "steps": step, "minutes": round((time.time() - t0) / 60, 1),
                 "device": dev})
+    # 用户实际检测过、确认来源的文档（只评估、从不训练）：逐段打分
+    from app.segmenter import normalize_english
+    ud = load_jsonl(ev.DATA_DIR / "eval_en_user_docs.jsonl")
+    if ud:
+        pu = predict([{"text": normalize_english(" ".join(r["text"].split())), "y": r["y"]} for r in ud])
+        docs = {}
+        for p_, r in zip(pu, ud):
+            docs.setdefault(f"{r['doc']}（{'AI' if r['y'] else '真人'}）", []).append(round(p_, 3))
+        res["user_docs"] = docs
+        res["user_docs_flagged_at_5pct"] = {d: f"{sum(x >= thr[0.05] for x in v)}/{len(v)}" for d, v in docs.items()}
+        res["user_docs_flagged_at_1pct"] = {d: f"{sum(x >= thr[0.01] for x in v)}/{len(v)}" for d, v in docs.items()}
     print(json.dumps(res, ensure_ascii=False, indent=1), flush=True)
     for k in ("1pct", "5pct"):
         print(f"::notice title=英文第二分类器评估（误判率 {k}，没参与训练的题目与样本）::" + json.dumps(
             {"test_auroc_all": res["test_auroc_all"], "ai_caught": res[f"ai_caught_at_{k}"],
-             "human_flagged": res[f"human_flagged_at_{k}"]}, ensure_ascii=False), flush=True)
+             "human_flagged": res[f"human_flagged_at_{k}"], "user_docs": res.get(f"user_docs_flagged_at_{k}")},
+            ensure_ascii=False), flush=True)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     model.half().save_pretrained(out, safe_serialization=True)

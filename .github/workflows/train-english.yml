@@ -43,7 +43,7 @@ jobs:
           r = json.load(open("/tmp/x/english-classifier/training_result.json"))
           for k in ("1pct", "5pct"):
               print(f"::notice title=英文第二分类器评估（误判率 {k}）::" + json.dumps(
-                  {"auroc": r["test_auroc_all"], "ai_caught": r[f"ai_caught_at_{k}"], "human_flagged": r[f"human_flagged_at_{k}"]},
+                  {"auroc": r["test_auroc_all"], "ai_caught": r[f"ai_caught_at_{k}"], "human_flagged": r[f"human_flagged_at_{k}"], "user_docs": r.get(f"user_docs_flagged_at_{k}")},
                   ensure_ascii=False))
           PY
           cat /tmp/x/english-classifier/training_result.json >> "$GITHUB_STEP_SUMMARY"

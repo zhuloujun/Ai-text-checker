@@ -21,6 +21,7 @@ on:
       - "!server/tools/train_english.py"
       - "!server/tools/train_english_modal.py"
       - "!server/tools/data/gen_en/**"
+      - "!server/tools/data/eval_en_user_docs.jsonl"
       - "!server/tools/compare_experiment.py"
       - ".github/workflows/evaluate.yml"
   workflow_dispatch:

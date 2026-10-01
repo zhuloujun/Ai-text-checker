@@ -116,6 +116,45 @@ def fetch_pubmed(topic: str, n: int, china: bool) -> list[dict]:
     return out
 
 
+def fetch_pmc(topic: str, n: int, china: bool) -> list[dict]:
+    """PMC 开放获取全文（真人论文正文：引言、材料与方法、结果、讨论）。只有摘要的话，模型可能把"方法 / 结果段落的写法"
+    误当成 AI 特征（AI 样本里有整篇论文），所以真人一侧也要有正文。"""
+    term = (f"({topic}) AND 2012:2021[pdat] AND open access[filter] AND "
+            + ("China[Affiliation]" if china else "NOT China[Affiliation]"))
+    raw = _pubmed("esearch.fcgi", {"db": "pmc", "term": term, "retmax": n, "retmode": "json", "sort": "relevance"})
+    if not raw:
+        return []
+    ids = json.loads(raw).get("esearchresult", {}).get("idlist", [])
+    out = []
+    for i in range(0, len(ids), 10):
+        xml = _pubmed("efetch.fcgi", {"db": "pmc", "id": ",".join(ids[i:i + 10]), "retmode": "xml"})
+        if not xml:
+            continue
+        try:
+            root = ET.fromstring(xml)
+        except ET.ParseError:
+            continue
+        for art in root.iter("article"):
+            t = art.find(".//article-meta//article-title")
+            title = re.sub(r"\s+", " ", "".join(t.itertext())).strip() if t is not None else ""
+            body = art.find("body")
+            if not title or body is None:
+                continue
+            paras = []
+            for sec in body.iter("sec"):
+                for p_ in sec.findall("p"):
+                    for bad in p_.findall(".//xref") + p_.findall(".//table-wrap") + p_.findall(".//fig"):
+                        bad.text = ""
+                    txt = re.sub(r"\s+", " ", "".join(p_.itertext())).strip()
+                    txt = re.sub(r"\[\s*[,–-]*\s*\]|\(\s*[,;–-]*\s*\)", "", txt)
+                    if len(txt) > 200:
+                        paras.append(txt)
+            text = "\n".join(paras)
+            if len(text) > 2000 and not re.search(r"[\u4e00-\u9fff]", text):
+                out.append({"title": title.rstrip("."), "text": text[:9000], "topic": topic, "cn": china})
+    return out
+
+
 def fetch_arxiv(cat: str, n: int) -> list[dict]:
     q = urllib.parse.urlencode({"search_query": f"cat:{cat} AND submittedDate:[201501010000 TO 202112312359]",
                                 "start": 0, "max_results": n, "sortBy": "relevance"})
@@ -242,6 +281,20 @@ def load_jsonl(f: Path) -> list[dict]:
 
 
 def human_pool(out: Path, source: str, per_category: int) -> list[dict]:
+    if source == "pmc":
+        f = out / "pmc_human.jsonl"
+        human = load_jsonl(f)
+        if not human:
+            seen = set()
+            for topic in PUBMED_TOPICS:
+                for china, n in ((True, 25), (False, 15)):
+                    got = [h for h in fetch_pmc(topic, n, china) if h["title"] not in seen]
+                    seen.update(h["title"] for h in got)
+                    print(f"PMC {topic}（{'中国作者' if china else '其他'}）：{len(got)} 篇", flush=True)
+                    human += got
+            f.write_text("\n".join(json.dumps(h, ensure_ascii=False) for h in human) + "\n", "utf-8")
+            print(f"::notice title=PMC 真人论文正文::共 {len(human)} 篇（中国作者 {sum(h['cn'] for h in human)} 篇）", flush=True)
+        return human
     if source == "pubmed":
         f = out / "pubmed_human.jsonl"
         human = load_jsonl(f)
@@ -301,7 +354,7 @@ def main():
     import threading
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=str(Path(__file__).resolve().parent / "data" / "gen_en"))
-    ap.add_argument("--source", choices=["arxiv", "pubmed"], default="arxiv",
+    ap.add_argument("--source", choices=["arxiv", "pubmed", "pmc"], default="arxiv",
                     help="题目来源：arxiv（摘要类）或 pubmed（农业、经济、医学等，含中国作者；生成整篇论文）")
     ap.add_argument("--n-titles", type=int, default=200, help="每家模型生成多少篇（每篇轮换一种类型）")
     ap.add_argument("--per-category", type=int, default=40)
@@ -313,6 +366,8 @@ def main():
     human = human_pool(out, args.source, args.per_category)
     if not human:
         raise SystemExit("没有抓到真人摘要")
+    if args.source == "pmc":
+        return          # 只抓真人论文正文，不生成
     titles = [h["title"] for h in human]
     kinds = PM_KINDS if args.source == "pubmed" else KINDS
     t_start = time.time()
