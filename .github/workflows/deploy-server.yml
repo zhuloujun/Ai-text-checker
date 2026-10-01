@@ -78,7 +78,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           # 内置校准里写的是哪个版本（english-classifier-v1 / v2 …），就部署那个版本
-          TAG=$(grep -o 'english-classifier-v[0-9]*' server/app/default_calibration.json | head -1 || true)
+          TAG=$(grep -oE 'english-classifier-(exp-)?v[0-9]+' server/app/default_calibration.json | head -1 || true)
           if [ -n "$TAG" ]; then
             gh release download "$TAG" -p english-classifier.tar.gz -D /tmp -R "${{ github.repository }}"
             tar xzf /tmp/english-classifier.tar.gz -C server/
