@@ -1,0 +1,42 @@
+# 线上验收：用仓库里确认过来源的样本（server/tools/data/eval_en_user_docs.jsonl 等）请求线上服务，打印每篇 / 每段的结果。
+# 只能在 Actions 页面手动运行。会签发一个 1 天有效的临时 Key。
+name: 线上验收检测
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: 请求线上服务
+        env:
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN || secrets.HF_ADMIN_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json, os, time, urllib.request
+          BASE = "https://zhuloujun--ai-text-checker-web.modal.run"
+          def call(path, body=None, headers=None, method=None):
+              req = urllib.request.Request(BASE + path, json.dumps(body).encode() if body is not None else None,
+                                           {"Content-Type": "application/json", **(headers or {})}, method=method)
+              with urllib.request.urlopen(req, timeout=900) as r:
+                  return json.loads(r.read())
+          key = call("/admin/api/keys", {"name": "live-check", "days": 1}, {"X-Admin-Token": os.environ["ADMIN_TOKEN"]})
+          tok = key.get("key") or key.get("api_key") or key.get("token")
+          rows = [json.loads(l) for l in open("server/tools/data/eval_en_user_docs.jsonl") if l.strip()]
+          docs = {}
+          for r in rows:
+              docs.setdefault((r["doc"], r["y"]), []).append(r["text"])
+          for (doc, y), paras in docs.items():
+              j = call("/v1/detect", {"text": "\n\n".join(paras), "wait": True}, {"Authorization": "Bearer " + tok})
+              while j.get("status") not in ("done", "error"):
+                  time.sleep(5)
+                  j = call(f"/v1/jobs/{j['job_id']}", headers={"Authorization": "Bearer " + tok})
+              res = j.get("result") or {}
+              s = res.get("summary") or {}
+              segs = [f"{round((g.get('prob') or 0) * 100)}%{'*' if g.get('level') in ('high', 'mid', 'light') else ''}"
+                      for g in res.get("segments", []) if g.get("prob") is not None]
+              print(f"::notice title={doc}（{'AI' if y else '真人'}）::AI 率 {s.get('ai_rate')} · 各段 {' '.join(segs)}")
+          PY
