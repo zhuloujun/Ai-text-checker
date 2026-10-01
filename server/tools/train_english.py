@@ -52,6 +52,18 @@ def windows(text: str, rnd: random.Random, k: int) -> list[str]:
     return out
 
 
+def clean_ai(text: str) -> str:
+    """去掉生成文字里的 Markdown 痕迹（表格行、*、#、---）和夹杂的中文行：用户粘贴到 Word 里的论文没有这些，
+    留着会让模型靠"有没有星号"来判断，而不是学真正的文风。"""
+    lines = []
+    for ln in text.splitlines():
+        s = ln.strip()
+        if not s or s.startswith("|") or re.fullmatch(r"[-=*_\s]{3,}", s) or re.search(r"[\u4e00-\u9fff]", s):
+            continue
+        lines.append(re.sub(r"[*#`]+", "", s).strip())
+    return "\n".join(lines)
+
+
 def load_jsonl(f: Path) -> list[dict]:
     return [json.loads(l) for l in f.read_text("utf-8").splitlines() if l.strip()] if f.exists() else []
 
@@ -73,7 +85,7 @@ def build_rows(args, rnd):
         gen_models.append(f.stem)
         model = f.stem.replace("pm_", "")
         for g in load_jsonl(f):
-            raw.append((g["text"], 1, f"gen-{model}", split_of(g["title"]), 3))
+            raw.append((clean_ai(g["text"]), 1, f"gen-{model}", split_of(g["title"]), 3))
     if not gen_models:
         raise SystemExit("tools/data/gen_en 里还没有生成数据，请先运行“生成英文 AI 训练数据”工作流")
     mage = ev.read_mage(Path(args.mage_dir) / "valid.csv")
