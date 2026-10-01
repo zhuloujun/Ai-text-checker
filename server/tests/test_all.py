@@ -702,3 +702,16 @@ def test_english_paper_detection_and_profile_fallback():
     assert not is_english_paper(ENGLISH * 3)
     cal = {"profiles": {"en": {"threshold": 0.7}}}
     assert scoring.profile_for(cal, "en_paper")[0]["threshold"] == 0.7
+
+
+def test_second_paper_after_references_is_counted():
+    """一个文档里放了两篇论文：第一篇的参考文献之后，第二篇的标题、摘要和正文要重新计入。"""
+    body = ("Tomato is one of the most widely cultivated vegetable crops in the world. It is important in both fresh "
+            "markets and food-processing industries. The profitability of tomato production depends on yield. ") * 4
+    doc = ("Paper One Title\nAbstract\n" + body + "\nReferences\n[1] Smith J. Tomato. J Hort, 2020, 12(3): 1-9.\n---\n"
+           "Technical Measures for Increasing Tomato Yield\nAbstract\n" + body + "\n1.Introduction\n" + body)
+    segs = segment_text(doc)
+    refs = [s for s in segs if s.kind == "reference"]
+    assert len(refs) == 1 and "Smith" in refs[0].text and "Technical Measures" not in refs[0].text
+    second = [s for s in segs if s.kind == "body" and s.block == refs[0].block + 1]
+    assert second and second[0].text.startswith("Technical Measures")

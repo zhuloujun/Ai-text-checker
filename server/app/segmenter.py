@@ -11,6 +11,22 @@ _REF_HEAD = re.compile(
 )
 # 参考文献之后又出现这些标题时，恢复计入（例如"附录""致谢"不计，"后记"不计；这里只处理常见情形）
 _AFTER_REF_HEAD = re.compile(r"^\s*(附录|致谢|后记|Appendix|Acknowledg)", re.IGNORECASE)
+# 参考文献条目的样子：[1] / 1. / (1) 开头，或带"作者. 年份"、期刊卷期页码等
+_REF_ENTRY = re.compile(r"^\s*(\[\d+\]|［\d+］|\(\d+\)|\d+[.、]\s)|\b(19|20)\d{2}[a-z]?[.,;)]|\d+\s*[(:（]\s*\d+|pp?\.\s*\d|doi[:.]|https?://",
+                        re.IGNORECASE)
+
+
+def _ends_references(line: str) -> bool:
+    """参考文献之后又开始了新的正文（例如一个文档里放了两篇论文）：出现章节标题（摘要 / Abstract / 引言…），
+    或出现一段不像参考文献条目的长段正文（≥ 250 字、含 2 句以上）。"""
+    s = line.strip()
+    if not s or _REF_HEAD.match(s):
+        return False
+    if is_section_heading(s):
+        return True
+    if len(s) >= 250 and not _REF_ENTRY.search(s[:120]):
+        return len(re.findall(r"[。！？!?]|\.\s+[A-Z]|\.(?=[A-Z][a-z])", s)) >= 2
+    return False
 _CJK = re.compile(r"[㐀-䶿一-鿿]")
 _LATIN = re.compile(r"[A-Za-z]")
 # 文言常用虚词 / 现代汉语标志词（用于区分文言与白话；阈值用 NLPCC 现代文与 NiuTrans 古文语料测定：
@@ -221,6 +237,25 @@ def segment_text(text: str, exclude_references: bool = True, flag_quotations: bo
         if in_refs and _AFTER_REF_HEAD.match(stripped):
             flush("reference")
             in_refs = False
+        elif in_refs and _ends_references(stripped):
+            # 参考文献结束、新作品开始：参考文献末尾紧挨着的标题行（新论文题目）归入新作品
+            lines = buf.rstrip("\n").split("\n")
+            carry = []
+            while lines and (not lines[-1].strip() or _RULE_LINE.match(lines[-1].strip())
+                             or (is_title(lines[-1]) or (len(lines[-1].strip()) <= 120 and not _REF_ENTRY.search(lines[-1])
+                                                          and not re.search(r"[.。]$", lines[-1].strip())))):
+                carry.insert(0, lines.pop())
+                if len(carry) > 4:
+                    break
+            carry_text = "\n".join(l for l in carry if l.strip() and not _RULE_LINE.match(l.strip())).strip()
+            buf = "\n".join(lines) + "\n" if lines else ""
+            flush("reference")
+            in_refs = False
+            block += 1
+            pending_break = False
+            if carry_text and not _REF_HEAD.match(carry_text):
+                buf_start = line_start - len(carry_text) - 1
+                buf = carry_text + "\n"
         if in_refs:
             if not buf:
                 buf_start = line_start
