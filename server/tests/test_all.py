@@ -715,3 +715,22 @@ def test_second_paper_after_references_is_counted():
     assert len(refs) == 1 and "Smith" in refs[0].text and "Technical Measures" not in refs[0].text
     second = [s for s in segs if s.kind == "body" and s.block == refs[0].block + 1]
     assert second and second[0].text.startswith("Technical Measures")
+
+
+def test_english_paper_whole_document_verdict(client, monkeypatch):
+    """英文论文：第二分类器各段中位数达到阈值时整篇按 AI 计，单段低分的段落标"整篇判断"。"""
+    from app import config
+    import app.main as m
+    monkeypatch.setattr(config, "EN_PAPER_DOC_THRESHOLD", 0.0)
+    cal = dict(m.engine.cal)
+    profs = dict(cal.get("profiles") or {})
+    profs["en_paper"] = {"threshold": 0.999, "lr": None, "calibrated": True}
+    monkeypatch.setattr(m.engine, "cal", dict(cal, profiles=profs))
+    para = ENGLISH * 3
+    doc = "Title of Paper\nAbstract\n" + para + "\n1. Introduction\n" + para + "\n2. Methods\n" + para + "\n3. Results\n" + para + "\n4. Conclusion\n" + para
+    h = {"Authorization": "Bearer " + issue(client)}
+    r = client.post("/v1/detect", json={"text": doc, "wait": True}, headers=h).json()
+    res = r["result"]
+    en = [s for s in res["segments"] if s["register"] == "en" and s["kind"] == "body"]
+    assert len(en) >= 3 and all(s["label"] == "中度疑似（整篇判断）" for s in en)
+    assert res["summary"]["ai_rate"] == 1.0

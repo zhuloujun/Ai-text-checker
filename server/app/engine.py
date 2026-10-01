@@ -393,6 +393,31 @@ class Engine:
                 work_ai.update(i for i in idxs if smoothed.get(i) is not None
                                and thr_g[i] - scoring.NEAR_MARGIN <= smoothed[i] < thr_g[i])
 
+        # 4) 英文学术论文的整篇判断（与 Turnitin、GPTZero 按整篇文档给结论一致）：同一篇论文里，"国产大模型英文分类器"
+        #    各段得分的中位数（按字数加权）达到 EN_PAPER_DOC_THRESHOLD 时，整篇按 AI 生成计。
+        #    依据：单段得分会因分段位置大幅波动（同一段引言，带不带上一行"Keywords"能差出 14% 与 96%），
+        #    而整篇的中位数很稳定——没参与训练的 110 篇真人论文全文（多为中国作者）中位数最高 0.38，
+        #    226 篇国产模型写的论文最低 0.95。
+        paper_ai = set()
+        if en_paper:
+            for (blk, reg), idxs in groups.items():
+                if reg != "en":
+                    continue
+                vals = sorted((results[i]["classifier_en2"], len(segs_by_idx[i].text)) for i in idxs
+                              if results[i].get("classifier_en2") is not None)
+                if len(vals) < 3:
+                    continue
+                half, acc, med = sum(n for _, n in vals) / 2, 0, None
+                for p_, n in vals:
+                    acc += n
+                    if acc >= half:
+                        med = p_
+                        break
+                if med is not None and med >= config.EN_PAPER_DOC_THRESHOLD:
+                    paper_ai.update(i for i in idxs if smoothed.get(i) is not None
+                                    and smoothed[i] < float(prof[i][0].get("threshold", 0.5)))
+                    work_ai.difference_update(idxs)
+
         seg_out, counted_chars, prob_weighted = [], 0, 0.0
         chars_by_level = {"high": 0, "mid": 0, "light": 0, "low": 0}
         level_counts = {"high": 0, "mid": 0, "light": 0, "low": 0}
@@ -407,8 +432,10 @@ class Engine:
             prob = smoothed.get(s.index) if s.counted else None
             level, label = scoring.level_of(prob, thr) if s.counted else ("none", "")
             near = bool(s.counted and prob is not None and thr - scoring.NEAR_MARGIN <= prob < thr)
-            by_work = s.index in work_ai
-            if by_work:
+            by_work = s.index in work_ai or s.index in paper_ai
+            if s.index in paper_ai:
+                level, label, near = "mid", "中度疑似（整篇判断）", False
+            elif by_work:
                 level, label, near = "light", "轻度疑似（整篇判断）", False
             if s.counted and prob is not None:
                 counted_chars += len(s.text)
@@ -473,6 +500,10 @@ class Engine:
         if n_short:
             notes.append(f"有 {n_short} 段篇幅较短（中文不足 {config.SHORT_CHARS_ZH} 字 / 英文不足 {config.SHORT_WORDS_EN} 词），"
                          "已标“篇幅短”，这些段落的结果波动较大。")
+        if paper_ai:
+            notes.append(f"按整篇判断：这篇英文论文多数段落带有明显的大模型写作特征（整篇中位得分达到阈值），另有 {len(paper_ai)} 段"
+                         "单看得分不高，也按“中度疑似（整篇判断）”计入。单段得分会随分段位置波动，整篇结论更可靠；"
+                         "如果其中有你亲自写的段落，请以整篇结论为参考、逐段复核。")
         if work_ai:
             notes.append(f"有 {len(work_ai)} 段 AI 概率接近阈值，但所在作品的大部分段落已判为疑似 AI，"
                          "按整篇判断计为“轻度疑似（整篇判断）”（AI 文章通常整篇生成）。")
