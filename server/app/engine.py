@@ -123,6 +123,7 @@ class Engine:
         user = config.load_user_profiles()
         for prof, c in user.items():
             cal = scoring.merge_profile(cal, c, prof)
+        self.user_profiles = sorted(user)
         if user:
             source += "；已叠加你的标注校准（" + "、".join(scoring.PROFILE_NAMES.get(p, p) for p in user) + "）"
         return cal, source
@@ -191,7 +192,11 @@ class Engine:
             "classifier_classical": st(self.cls_classical, config.CLASSICAL_CLASSIFIER_ID),
             "calibration": {"calibrated": bool(self.cal.get("calibrated")), "source": self.cal_source,
                             "threshold": self.cal.get("threshold"), "note": self.cal.get("note"),
-                            "profiles": profiles},
+                            "profiles": profiles,
+                            # 各文体实际使用的阈值，以及哪些文体叠加了用户自己的标注校准（排查"为什么没判出来"时用）
+                            "thresholds": {k: round(scoring.profile_for(self.cal, k)[0].get("threshold", 0), 4)
+                                           for k in ("zh", "zh_short", "en", "zh_classical", "zh_poetry")},
+                            "user_profiles": getattr(self, "user_profiles", [])},
             "tokens_per_sec": self.tokens_per_sec,
         }
 
