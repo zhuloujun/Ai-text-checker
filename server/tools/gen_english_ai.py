@@ -56,6 +56,66 @@ KINDS = [
 ]
 
 
+# PubMed（真人，ChatGPT 之前 2012–2021 年的论文摘要）：农业、经济金融、食品、环境、医学、工程、教育等，
+# 每个主题一半取"中国作者"（China[Affiliation]）——英文检测最容易冤枉的就是中国作者写的英文论文，必须让模型见过。
+PUBMED_TOPICS = [
+    "vegetable cultivation yield", "crop yield fertilizer management", "rice cultivation technology", "greenhouse vegetable production",
+    "farmer income agricultural economics", "plant disease control field", "soil fertility organic fertilizer",
+    "irrigation water use efficiency", "fruit tree cultivation", "tea plantation", "food processing quality",
+    "aquaculture fish farming", "livestock poultry production", "stock market returns volatility", "financial risk bank",
+    "economic growth regional", "environmental pollution assessment", "climate change agriculture adaptation",
+    "traditional Chinese medicine clinical", "nursing intervention patients", "machine learning prediction model",
+    "material synthesis characterization", "teaching education students", "public health survey",
+]
+PM_KINDS = [
+    ("full_paper", "请用英文写一篇题为《{t}》的学术论文，包括 Abstract、Keywords、1. Introduction、2. Materials and Methods、"
+                   "3. Results and Analysis、4. Discussion、5. Conclusion，正文约 {n2} 词，数据可以合理虚构。只输出论文正文。"),
+    ("full_paper_en", "Write a complete research paper titled \"{t}\" with Abstract, Keywords, Introduction, Materials and Methods, "
+                      "Results, Discussion and Conclusion sections (about {n2} words in total). Use realistic (invented) data."),
+    ("zh_abstract", "请帮我写论文《{t}》的英文摘要，约 {n} 词，符合 SCI 期刊风格，只输出英文摘要。"),
+    ("full_paper", None),
+    ("zh_author", "你是一位中国高校的研究者，正在给国际期刊投稿。请用英文写论文《{t}》的引言部分，约 {n} 词，只输出英文正文。"),
+    ("results", "Write the \"Results and Discussion\" section of a paper titled \"{t}\", with concrete (invented) numbers, about {n} words."),
+]
+
+
+def _pubmed(url_tail, params):
+    url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/" + url_tail + "?" + urllib.parse.urlencode(params)
+    for attempt in range(4):
+        try:
+            with urllib.request.urlopen(url, timeout=90) as r:
+                data = r.read()
+            time.sleep(0.4)          # NCBI 要求无密钥时每秒不超过 3 次
+            return data
+        except Exception as e:  # noqa: BLE001
+            print(f"PubMed 第 {attempt + 1} 次失败：{e}", flush=True)
+            time.sleep(5 * (attempt + 1))
+    return None
+
+
+def fetch_pubmed(topic: str, n: int, china: bool) -> list[dict]:
+    term = (f"({topic}) AND 2012:2021[dp] AND hasabstract AND english[lang] AND "
+            + ("China[Affiliation]" if china else "NOT China[Affiliation]"))
+    raw = _pubmed("esearch.fcgi", {"db": "pubmed", "term": term, "retmax": n, "retmode": "json", "sort": "relevance"})
+    if not raw:
+        return []
+    ids = json.loads(raw).get("esearchresult", {}).get("idlist", [])
+    if not ids:
+        return []
+    xml = _pubmed("efetch.fcgi", {"db": "pubmed", "id": ",".join(ids), "retmode": "xml"})
+    if not xml:
+        return []
+    out = []
+    for art in ET.fromstring(xml).iter("PubmedArticle"):
+        title = re.sub(r"\s+", " ", "".join(art.find(".//ArticleTitle").itertext()) if art.find(".//ArticleTitle") is not None else "").strip()
+        parts = ["".join(a.itertext()).strip() for a in art.findall(".//Abstract/AbstractText")]
+        abst = re.sub(r"\s+", " ", " ".join(p for p in parts if p)).strip()
+        if title and len(abst) > 600 and not re.search(r"[\u4e00-\u9fff]", abst):
+            out.append({"title": title.rstrip("."), "text": abst, "topic": topic, "cn": china,
+                        "id": art.findtext(".//PMID", "")})
+    return out
+
+
 def fetch_arxiv(cat: str, n: int) -> list[dict]:
     q = urllib.parse.urlencode({"search_query": f"cat:{cat} AND submittedDate:[201501010000 TO 202112312359]",
                                 "start": 0, "max_results": n, "sortBy": "relevance"})
@@ -96,12 +156,12 @@ def _throttle(url):
             _last_call[k] = time.time()
 
 
-def chat_once(url, key, model, prompt, temperature):
+def chat_once(url, key, model, prompt, temperature, max_tokens=1200):
     _throttle(url)
     new_kimi = model.startswith("kimi-k")          # Kimi 新模型（k2.6 / k3 等）只接受 temperature = 1，且会先"思考"，要留足 token
     body = json.dumps({"model": model, "messages": [{"role": "user", "content": prompt}],
                        "temperature": 1.0 if new_kimi else min(temperature, 1.0),
-                       "max_tokens": 6000 if new_kimi else 1200}).encode()
+                       "max_tokens": max_tokens + 5000 if new_kimi else max_tokens}).encode()
     req = urllib.request.Request(url, body, {"Content-Type": "application/json", "Authorization": f"Bearer {key}"})
     with urllib.request.urlopen(req, timeout=300) as r:
         return (json.loads(r.read())["choices"][0]["message"].get("content") or "").strip()
@@ -161,10 +221,10 @@ def pick_endpoint(name, key, endpoints):
     return None
 
 
-def chat(url, key, model, prompt, temperature):
+def chat(url, key, model, prompt, temperature, max_tokens=1200):
     for attempt in range(4):
         try:
-            return chat_once(url, key, model, prompt, temperature)
+            return chat_once(url, key, model, prompt, temperature, max_tokens)
         except Exception as e:  # noqa: BLE001
             print(f"  {model} 第 {attempt + 1} 次失败：{e}", flush=True)
             time.sleep(30 if "429" in str(e) else 10 * (attempt + 1))
@@ -177,68 +237,101 @@ def clean(t: str) -> str:
     return t.strip()
 
 
+def load_jsonl(f: Path) -> list[dict]:
+    return [json.loads(l) for l in f.read_text("utf-8").splitlines() if l.strip()] if f.exists() else []
+
+
+def human_pool(out: Path, source: str, per_category: int) -> list[dict]:
+    if source == "pubmed":
+        f = out / "pubmed_human.jsonl"
+        human = load_jsonl(f)
+        if not human:
+            seen = set()
+            for topic in PUBMED_TOPICS:
+                for china, n in ((True, 50), (False, 40)):
+                    got = [h for h in fetch_pubmed(topic, n, china) if h["title"] not in seen]
+                    seen.update(h["title"] for h in got)
+                    print(f"PubMed {topic}（{'中国作者' if china else '其他'}）：{len(got)} 篇", flush=True)
+                    human += got
+            f.write_text("\n".join(json.dumps(h, ensure_ascii=False) for h in human) + "\n", "utf-8")
+            print(f"::notice title=PubMed 真人摘要::共 {len(human)} 篇（中国作者 {sum(h['cn'] for h in human)} 篇）", flush=True)
+        return human
+    f = out / "arxiv_human.jsonl"
+    human = load_jsonl(f)
+    if not human:
+        for cat in CATEGORIES:
+            got = fetch_arxiv(cat, per_category)
+            print(f"arXiv {cat}: {len(got)} 篇", flush=True)
+            human += got
+        f.write_text("\n".join(json.dumps(h, ensure_ascii=False) for h in human) + "\n", "utf-8")
+    return human
+
+
+def run_provider(name, key, endpoints, titles, out_f, kinds, n_titles, t_start, budget_min, lock):
+    ep = pick_endpoint(name, key, endpoints)
+    if not ep:
+        return 0
+    url, model = ep
+    rnd = random.Random(f"{name}-{out_f.name}")
+    done = {r["title"] + "|" + r["kind"] for r in load_jsonl(out_f)}
+    picks = rnd.sample(titles, min(n_titles, len(titles)))
+    n_new = 0
+    for i, t in enumerate(picks):
+        if (time.time() - t_start) / 60 > budget_min:
+            print(f"::warning title={name}::已到时长上限，先保存已生成的 {n_new} 篇（下次运行会接着生成）", flush=True)
+            break
+        kind, tpl = kinds[i % len(kinds)]
+        tpl = tpl or next(x for k, x in kinds if k == kind and x)
+        if f"{t}|{kind}" in done:
+            continue
+        n, n2 = rnd.choice([150, 200, 250, 300]), rnd.choice([900, 1200, 1500])
+        long = kind.startswith("full_paper")
+        text = chat(url, key, model, tpl.format(t=t, n=n, n2=n2), rnd.choice([0.6, 0.8, 1.0]), 3500 if long else 1200)
+        if text and len(text) > 300:
+            with lock, out_f.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps({"title": t, "kind": kind, "model": name, "text": clean(text)}, ensure_ascii=False) + "\n")
+            n_new += 1
+        if i % 20 == 0:
+            print(f"{name}: {i + 1}/{len(picks)}", flush=True)
+    print(f"::notice title={name}（{out_f.name}）::新生成 {n_new} 篇", flush=True)
+    return n_new
+
+
 def main():
+    import threading
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=str(Path(__file__).resolve().parent / "data" / "gen_en"))
-    ap.add_argument("--n-titles", type=int, default=200, help="每家模型生成多少篇（每篇随机一种段落类型）")
+    ap.add_argument("--source", choices=["arxiv", "pubmed"], default="arxiv",
+                    help="题目来源：arxiv（摘要类）或 pubmed（农业、经济、医学等，含中国作者；生成整篇论文）")
+    ap.add_argument("--n-titles", type=int, default=200, help="每家模型生成多少篇（每篇轮换一种类型）")
     ap.add_argument("--per-category", type=int, default=40)
     ap.add_argument("--time-budget-min", type=float, default=260,
                     help="总时长上限（分钟）：到点就停止生成、保留已生成的部分，避免工作流超时被强行终止而丢掉全部数据")
     args = ap.parse_args()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    rnd = random.Random(2026)
-
-    human_f = out / "arxiv_human.jsonl"
-    if human_f.exists():
-        human = [json.loads(l) for l in human_f.read_text("utf-8").splitlines() if l.strip()]
-    else:
-        human = []
-        for cat in CATEGORIES:
-            got = fetch_arxiv(cat, args.per_category)
-            print(f"arXiv {cat}: {len(got)} 篇", flush=True)
-            human += got
-        human_f.write_text("\n".join(json.dumps(h, ensure_ascii=False) for h in human) + "\n", "utf-8")
+    human = human_pool(out, args.source, args.per_category)
     if not human:
-        raise SystemExit("没有抓到 arXiv 摘要")
+        raise SystemExit("没有抓到真人摘要")
     titles = [h["title"] for h in human]
-
+    kinds = PM_KINDS if args.source == "pubmed" else KINDS
     t_start = time.time()
-    any_key = False
+    lock = threading.Lock()
+    threads = []
     for name, (env, endpoints) in PROVIDERS.items():
         key = os.getenv(env, "").strip()
         if not key:
             print(f"未设置 {env}，跳过 {name}", flush=True)
             continue
-        ep = pick_endpoint(name, key, endpoints)
-        if not ep:
-            continue
-        url, model = ep
-        any_key = True
-        f = out / f"{name}.jsonl"
-        done = {json.loads(l)["title"] + "|" + json.loads(l)["kind"] for l in f.read_text("utf-8").splitlines()} if f.exists() else set()
-        picks = rnd.sample(titles, min(args.n_titles, len(titles)))
-        n_new = 0
-        with f.open("a", encoding="utf-8") as fh:
-            for i, t in enumerate(picks):
-                if (time.time() - t_start) / 60 > args.time_budget_min:
-                    print(f"::warning title={name}::已到时长上限，先保存已生成的 {n_new} 篇（下次运行会接着生成）", flush=True)
-                    break
-                kind, tpl = KINDS[i % len(KINDS)]
-                if f"{t}|{kind}" in done:
-                    continue
-                n = rnd.choice([150, 200, 250, 300])
-                text = chat(url, key, model, tpl.format(t=t, n=n), rnd.choice([0.6, 0.8, 1.0]))
-                if text and len(text) > 300:
-                    fh.write(json.dumps({"title": t, "kind": kind, "model": name, "text": clean(text)}, ensure_ascii=False) + "\n")
-                    fh.flush()
-                    n_new += 1
-                if i % 20 == 0:
-                    print(f"{name}: {i + 1}/{len(picks)}", flush=True)
-        print(f"::notice title={name}::新生成 {n_new} 篇", flush=True)
-    if not any_key:
+        out_f = out / (f"pm_{name}.jsonl" if args.source == "pubmed" else f"{name}.jsonl")
+        # 各家并行生成（Kimi 限速且会先"思考"，很慢，不能让它拖住其他家）
+        th = threading.Thread(target=run_provider, args=(name, key, endpoints, titles, out_f, kinds, args.n_titles,
+                                                         t_start, args.time_budget_min, lock), daemon=True)
+        th.start(); threads.append(th)
+    for th in threads:
+        th.join()
+    if not threads:
         print("::warning title=没有可用的 API 密钥::请检查仓库 Secrets 里的 DEEPSEEK_API_KEY / KIMI_API_KEY / WENXIN_API_KEY 是否正确、账户是否有余额", flush=True)
-        sys.exit(0)
 
 
 if __name__ == "__main__":
