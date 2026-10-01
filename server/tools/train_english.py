@@ -118,7 +118,7 @@ def main():
     if dev == "cpu":
         torch.set_num_threads(int(os.getenv("TORCH_THREADS", os.cpu_count() or 2)))
     else:
-        args.batch = max(args.batch, 32)
+        args.batch = max(args.batch, 16 if "large" in args.base else 32)
     print(f"设备：{dev}", flush=True)
     torch.manual_seed(0)
     rnd = random.Random(0)
