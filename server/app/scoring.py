@@ -274,7 +274,8 @@ def calibrate(human: list[dict], ai: list[dict], target_fpr: float = 0.05, featu
 # 校准 JSON 的顶层是"现代汉语"参数；profiles 里放其他文体（en 英文、zh_classical 文言、zh_poetry 诗词）各自的参数。
 # 各文体的文字特征差别很大（英文用英文分类器；文言的困惑度分布与白话完全不同），不能共用一套阈值。
 
-PROFILE_NAMES = {"zh": "现代汉语", "zh_short": "现代汉语短段", "zh_classical": "文言", "zh_poetry": "诗词", "en": "英文"}
+PROFILE_NAMES = {"zh": "现代汉语", "zh_short": "现代汉语短段", "zh_classical": "文言", "zh_poetry": "诗词", "en": "英文",
+                 "en_paper": "英文学术论文"}
 # 各文体用哪些特征做组合（用训练时没见过的评估集比较后选定，见 tools/EVAL_REPORT.md）：
 # 英文：分类器 + Fast-DetectGPT + Binoculars 三个主信号，在 GPT-4 新领域和改写文本上都优于全部特征；
 # 现代汉语：全部扩展特征更好。
@@ -283,7 +284,12 @@ PROFILE_NAMES = {"zh": "现代汉语", "zh_short": "现代汉语短段", "zh_cla
 #   困惑度、预测熵等扩展特征会被"刻意仿古"的文风带偏，把 AI 仿写拉回"像人写"。故文言只用三个主信号。
 # 英文有第二分类器（国产大模型英文）时，在三个主信号之外再加它（见 tools/evaluate.py 的 fit_profile）。
 EN2_FEATURES = BASE_FEATURES + ["logit_classifier_en2"]
-PROFILE_FEATURES = {"en": BASE_FEATURES, "zh_classical": BASE_FEATURES}
+# 英文学术论文（有 Abstract / Introduction / Methods 等章节标题的英文文档）单独校准：只用"国产大模型英文分类器 + 语言模型"，
+# 用真人学术英文（arXiv、PubMed、PMC，含大量中国作者）和国产模型写的英文论文拟合。2026-10 实测：通用的 desklib 分类器
+# 对国产模型写的论文几乎全判为人写（如用户用文心写的《Scallion》每段只有 2–38%），和它组合反而把检出拉低到 0；
+# 只在学术论文里去掉它后，没见过的国产模型论文检出 100%，PubMed / PMC 真人论文误判约 1%，《Scallion》8 段认出 6 段。
+EN_PAPER_FEATURES = ["logit_classifier_en2", "fastdetect", "binoculars"]
+PROFILE_FEATURES = {"en": BASE_FEATURES, "zh_classical": BASE_FEATURES, "en_paper": EN_PAPER_FEATURES}
 NEAR_MARGIN = 0.15   # 低于阈值不到这么多的段落标为"接近阈值"（不计入 AI 率）
 
 
@@ -296,6 +302,8 @@ def profile_for(cal: dict, register: str):
         merged = dict(DEFAULTS)
         merged.update(prof)
         return merged, bool(prof.get("calibrated"))
+    if register == "en_paper":
+        return profile_for(cal, "en")      # 没有学术论文专门校准时，沿用通用英文
     if register == "en":
         # 英文没有专门校准时，现代汉语的参数没有意义（分类器都不一样），退回经验值
         return dict(DEFAULTS), False

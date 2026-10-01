@@ -456,6 +456,86 @@
    "classifier": "desklib/ai-text-detector-v1.01+english-classifier-v3"
   }
  },
+ "en_paper": {
+  "calibration_report": {
+   "n_human": 280,
+   "n_ai": 242,
+   "auroc": {
+    "fastdetect": 0.711,
+    "binoculars": 0.7076,
+    "classifier": 0.9512
+   },
+   "features_used": [
+    "logit_classifier_en2",
+    "fastdetect",
+    "binoculars"
+   ],
+   "cross_validated": true,
+   "combined_auroc": 0.9961,
+   "threshold": 0.8849,
+   "human_flagged_rate": 0.0107,
+   "ai_caught_rate": 0.9835,
+   "note": "以上指标用 5 折交叉验证（每次用没参与拟合的样本）算出；样本越多、越接近你要检测的文本，越可信。"
+  },
+  "evaluation": [
+   {
+    "name": "英文学术论文：没参与训练和校准的题目（国产模型写的论文 vs arXiv / PubMed / PMC 真人，含中国作者）",
+    "n_human": 305,
+    "n_ai": 236,
+    "auroc": 0.9961,
+    "ai_caught": 0.9958,
+    "human_flagged": 0.0164,
+    "per_signal_auroc": {
+     "fastdetect": 0.6821,
+     "binoculars": 0.3194,
+     "logit_classifier": 0.9478,
+     "fastdetect_norm": 0.6815,
+     "lrr": 0.5905,
+     "log_rank": 0.3421,
+     "entropy": 0.3646,
+     "top10": 0.6508,
+     "lp_burstiness": 0.5828,
+     "style_cv": 0.5015,
+     "style_phrases": 0.6048,
+     "logit_classifier_en2": 0.9992
+    },
+    "ai_caught_by_model": {
+     "gen-deepseek": 1.0,
+     "gen-kimi": 1.0,
+     "gen-wenxin": 0.9865,
+     "gen-tr-deepseek": 1.0,
+     "gen-tr-wenxin": 1.0,
+     "gen-us-deepseek": 1.0,
+     "gen-us-wenxin": 1.0
+    },
+    "human_flagged_by_source": {
+     "arxiv-human": 0.0606,
+     "pmc-human": 0.0,
+     "pubmed-human": 0.0055
+    }
+   },
+   {
+    "name": "国产新模型 AI 英文短篇（用户提供，没参与训练的那 1/3）",
+    "n_human": 0,
+    "n_ai": 15,
+    "auroc": null,
+    "ai_caught": 0.8,
+    "human_flagged": null,
+    "per_signal_auroc": {},
+    "ai_caught_by_model": {
+     "repo-ai-deepseek": 0.9,
+     "repo-ai-kimi": 0.5,
+     "repo-ai-wenxin": 0.6667
+    },
+    "human_flagged_by_source": {}
+   }
+  ],
+  "models": {
+   "observer": "Qwen/Qwen2.5-0.5B",
+   "performer": "Qwen/Qwen2.5-0.5B-Instruct",
+   "classifier": "desklib/ai-text-detector-v1.01+english-classifier-v3"
+  }
+ },
  "zh_classical": {
   "calibration_report": {
    "n_human": 236,

@@ -102,7 +102,7 @@ CALIBRATION_FILE = Path(os.getenv("CALIBRATION_FILE", str(BASE_DIR / "calibratio
 
 
 def classifier_for(register: str) -> str:
-    if register == "en":
+    if register in ("en", "en_paper"):
         # 用了第二分类器时，校准参数必须是按两个分类器一起拟合的，所以把两个名字一起记进校准的 models 里
         return f"{EN_CLASSIFIER_MODEL}+{EN2_CLASSIFIER_ID}" if EN2_CLASSIFIER_MODEL else EN_CLASSIFIER_MODEL
     if register == "zh_poetry" and POETRY_CLASSIFIER_MODEL:

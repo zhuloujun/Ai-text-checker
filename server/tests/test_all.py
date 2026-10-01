@@ -527,7 +527,8 @@ def test_default_calibration_profiles_name_the_deployed_models():
     # 文言：按文言专用分类器拟合时，部署工作流会一并部署它（见 deploy-server.yml），两者都是合法的
     # 英文：按 desklib + 英文第二分类器拟合时，部署工作流同样会一并部署第二分类器
     alt = {"zh_classical": config.CLASSICAL_CLASSIFIER_ID,
-           "en": "desklib/ai-text-detector-v1.01+" + config.EN2_CLASSIFIER_ID}
+           "en": "desklib/ai-text-detector-v1.01+" + config.EN2_CLASSIFIER_ID,
+           "en_paper": "desklib/ai-text-detector-v1.01+" + config.EN2_CLASSIFIER_ID}
     for prof, model in expect.items():
         if prof in cal.get("profiles", {}):
             assert cal["profiles"][prof]["models"]["classifier"] in (model, alt.get(prof)), prof
@@ -691,3 +692,13 @@ def test_english_second_classifier_is_scored_and_named_in_calibration(client):
     assert config.classifier_for("en").endswith("+" + config.EN2_CLASSIFIER_ID)
     assert scoring.feature_value({"classifier_en2": 0.5}, "logit_classifier_en2") == 0.0
     assert scoring.feature_value({}, "logit_classifier_en2") is None
+
+
+def test_english_paper_detection_and_profile_fallback():
+    """有 Abstract / Introduction / Methods 等章节标题的英文文档按"英文学术论文"校准；没有该校准时沿用通用英文。"""
+    from app.segmenter import is_english_paper
+    paper = "Title\nAbstract\nText.\nKeywords: a; b\n1.Introduction\nText.\n2.Materials and Methods\nText.\n5. Conclusion\nText."
+    assert is_english_paper(paper)
+    assert not is_english_paper(ENGLISH * 3)
+    cal = {"profiles": {"en": {"threshold": 0.7}}}
+    assert scoring.profile_for(cal, "en_paper")[0]["threshold"] == 0.7

@@ -15,7 +15,7 @@ from . import config, scoring
 from .detectors import stylometry
 from .detectors.classifier import Classifier, make_english_classifier
 from .detectors.lm_scorer import LMScorer
-from .segmenter import REGISTER_NAMES, detect_register, min_chars, normalize_classical, normalize_english, segment_text
+from .segmenter import REGISTER_NAMES, detect_register, is_english_paper, min_chars, normalize_classical, normalize_english, segment_text
 
 log = logging.getLogger("engine")
 
@@ -195,7 +195,7 @@ class Engine:
                             "profiles": profiles,
                             # 各文体实际使用的阈值，以及哪些文体叠加了用户自己的标注校准（排查"为什么没判出来"时用）
                             "thresholds": {k: round(scoring.profile_for(self.cal, k)[0].get("threshold", 0), 4)
-                                           for k in ("zh", "zh_short", "en", "zh_classical", "zh_poetry")},
+                                           for k in ("zh", "zh_short", "en", "en_paper", "zh_classical", "zh_poetry")},
                             "user_profiles": getattr(self, "user_profiles", [])},
             "tokens_per_sec": self.tokens_per_sec,
         }
@@ -351,10 +351,13 @@ class Engine:
         scored_ids = {s.index for s in scored}
         prof = {}
         has_short = bool((cal.get("profiles") or {}).get("zh_short"))
+        en_paper = is_english_paper(text) and bool((cal.get("profiles") or {}).get("en_paper"))
         for s in segs:
             reg = s.register
             if reg == "zh" and has_short and len(score_text(s)) < config.SHORT_SEGMENT_CHARS:
                 reg = "zh_short"
+            if reg == "en" and en_paper:
+                reg = "en_paper"
             prof[s.index] = scoring.profile_for(cal, reg)
         memo = {s.index for s in scored if memorized(results[s.index])}
 

@@ -326,3 +326,20 @@ _EN_NUM_HEAD = re.compile(r"(?m)^(\d+(?:\.\d+)*\.)(?=[A-Z])")
 def normalize_english(text: str) -> str:
     text = _EN_GLUED.sub(r"\1 ", text)
     return _EN_NUM_HEAD.sub(r"\1 ", text)
+
+
+_EN_PAPER_HEAD = re.compile(
+    r"^\s*(\d+(\.\d+)*\.?\s*)?(abstract|keywords?|introduction|materials? and methods|methods?|methodology|"
+    r"results?( and (analysis|discussion))?|discussion|conclusions?|references|literature review)\b", re.I)
+
+
+def is_english_paper(text: str) -> bool:
+    """英文学术论文：至少有 3 个不同的常见章节标题（Abstract、Introduction、Methods、Results、Conclusion、References 等）。"""
+    found = set()
+    for line in text.splitlines():
+        if len(line.strip()) > 80:
+            continue
+        m = _EN_PAPER_HEAD.match(line.strip())
+        if m:
+            found.add(m.group(3).lower().split()[0])
+    return len(found) >= 3

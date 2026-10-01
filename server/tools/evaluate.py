@@ -79,6 +79,10 @@ PROFILE_PARTS = {
                     ("en_user_test", "国产新模型 AI 英文短篇（DeepSeek / Kimi / 文心一言，用户提供；英文第二分类器训练时没见过的那 1/3）"),
                                                   ("en_ood", "MAGE：GPT-4 在未见过的领域生成的文本"),
                                                   ("en_para", "MAGE：GPT-4 文本经改写后（含本仓库英文 AI 样本）")]},
+    # 英文学术论文：只用学术英文（arXiv / PubMed / PMC 真人，含中国作者）和国产模型写的英文论文拟合与评估
+    "en_paper": {"fit": ["en_gen_fit"],
+                 "eval": [("en_gen_test", "英文学术论文：没参与训练和校准的题目（国产模型写的论文 vs arXiv / PubMed / PMC 真人，含中国作者）"),
+                          ("en_user_test", "国产新模型 AI 英文短篇（用户提供，没参与训练的那 1/3）")]},
     "zh_classical": {"fit": ["cl_cal"], "eval": [("cl_test", "文言保留集（另一组古籍 + 未参与校准的 AI 文言）"),
                                                                 ("cl_user", "国产新模型 AI 文言故事（DeepSeek / Kimi / 文心一言；不参与校准，但其中 2/3 用于训练文言分类器，没见过的那 1/3 见分类器训练报告）")]},
 }
@@ -88,6 +92,7 @@ PROFILE_SOURCE = {
     "zh_classical": "NiuTrans 古文语料（人写）+ 大语言模型生成的文言样本",
     "zh_poetry": "ChangAn 当代旧体诗词（人写）+ DeepSeek / 豆包 / GPT-4.1 生成诗词；诗词专用分类器（ChangAn 训练集微调）",
     "zh_short": "NLPCC 2025 Task 1 样本截成 80–260 字的短段",
+    "en_paper": "arXiv / PubMed / PMC 真人学术英文（含中国作者）+ DeepSeek / 文心一言 / Kimi 写的英文论文",
 }
 
 # 文言：校准用的书 / 评估用的书（互不重叠）
@@ -488,7 +493,7 @@ def evaluate_rows(rows, cal, name):
 # 所以预先定得更严（与 Turnitin 对短文本从严的做法一致）。诗词同理：宁可少抓，也不冤枉写诗的人。
 # 英文 0.035：英文第二分类器 v2（加入 Kimi 数据）按 3.5% 拟合时，MAGE 新领域 96% / 误判 7.3%、改写 74% / 13.3%，
 # 都比 v1（94.7% / 8.7%、73.4% / 14.7%）检出多且误判少；国产模型论文段落 86%（含 Kimi 71%）/ arXiv 误判 3%。
-PROFILE_TARGET_FPR = {"zh_short": 0.01, "zh_poetry": 0.03, "zh_classical": 0.03, "en": 0.035}
+PROFILE_TARGET_FPR = {"zh_short": 0.01, "zh_poetry": 0.03, "zh_classical": 0.03, "en": 0.035, "en_paper": 0.01}
 # 自动选特征时，其他组合要比"全部特征"高出这么多才换（避免被交叉验证的随机波动带偏）
 SELECTION_MARGIN = 0.005
 
@@ -502,6 +507,8 @@ def fit_profile(prof, parts, target_fpr):
     if len(hs) < 10 or len(as_) < 10:
         return None
     fixed = scoring.PROFILE_FEATURES.get(prof)
+    if prof == "en_paper" and not all(scoring.feature_value(r, "logit_classifier_en2") is not None for r in hs[:20]):
+        return None
     use_en2 = prof == "en" and all(scoring.feature_value(r, "logit_classifier_en2") is not None for r in hs[:20])
     if use_en2:
         fixed = scoring.EN2_FEATURES
@@ -621,7 +628,7 @@ def stage_fit(args):
             parts[name] = json.loads(f.read_text("utf-8"))
     split_user_parts(parts)
     fitted = {}
-    for prof in ("zh", "zh_short", "en", "zh_classical", "zh_poetry"):
+    for prof in ("zh", "zh_short", "en", "en_paper", "zh_classical", "zh_poetry"):
         r = fit_profile(prof, parts, args.target_fpr)
         if r:
             fitted[prof] = r
