@@ -14,7 +14,7 @@ image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install("torch==2.7.1", "transformers>=4.45,<5", "tokenizers>=0.20", "huggingface_hub>=0.24",
                  "numpy>=1.26", "safetensors", "sentencepiece", "protobuf")
-    .run_commands("python -c \"from huggingface_hub import snapshot_download; snapshot_download('FacebookAI/roberta-base')\"",
+    .run_commands("python -c \"from huggingface_hub import snapshot_download; snapshot_download('FacebookAI/roberta-base'); snapshot_download('FacebookAI/roberta-large')\"",
                   "python -c \"from huggingface_hub import hf_hub_download; "
                   "hf_hub_download('yaful/MAGE', 'valid.csv', repo_type='dataset', local_dir='/mage')\"")
     .add_local_dir(str(SERVER / "app"), "/root/server/app", ignore=["__pycache__"])
