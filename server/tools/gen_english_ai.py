@@ -320,6 +320,48 @@ def human_pool(out: Path, source: str, per_category: int) -> list[dict]:
     return human
 
 
+# "先用中文写、再让 AI 译成英文"：国内作者最常见的用法，译出来的英文带明显的中式表达（per mu、"see dry see wet"等），
+# 读起来像中国作者自己写的英文，分类器最容易漏判。两步都由同一家模型完成。
+TR_KINDS = [
+    ("zh_then_en", "请写一篇题为《{t}》的中文学术论文，包括摘要、关键词、1 引言、2 材料与方法、3 结果与分析、4 讨论、5 结论，"
+                   "约 {z} 字，数据可以合理虚构，适合中国农业 / 经济 / 医学类期刊。只输出论文正文。"),
+    ("zh_then_en_short", "请写一篇题为《{t}》的中文科技论文，包括摘要、引言、关键技术分析（分 3–5 个小节）、结果与效益分析、结论，"
+                         "约 {z} 字，语言朴实，适合技术推广类期刊。只输出论文正文。"),
+]
+TRANSLATE = ["请把下面这篇中文论文完整翻译成英文，保持原有结构和小标题编号，只输出英文译文：\n\n{zh}",
+             "Translate the following Chinese paper into English for submission to a journal. Keep all headings and numbers. "
+             "Output only the English translation.\n\n{zh}"]
+
+
+def run_translate(name, key, endpoints, titles, out_f, n_titles, t_start, budget_min, lock):
+    ep = pick_endpoint(name, key, endpoints)
+    if not ep:
+        return 0
+    url, model = ep
+    rnd = random.Random(f"{name}-{out_f.name}")
+    done = {r["title"] for r in load_jsonl(out_f)}
+    n_new = 0
+    for i, t in enumerate(rnd.sample(titles, min(n_titles, len(titles)))):
+        if (time.time() - t_start) / 60 > budget_min:
+            print(f"::warning title={name}::已到时长上限，先保存已生成的 {n_new} 篇", flush=True)
+            break
+        if t in done:
+            continue
+        kind, tpl = TR_KINDS[i % len(TR_KINDS)]
+        zh = chat(url, key, model, tpl.format(t=t, z=rnd.choice([1500, 2000, 2500])), rnd.choice([0.7, 0.9]), 3500)
+        if not zh or len(zh) < 500:
+            continue
+        en = chat(url, key, model, rnd.choice(TRANSLATE).format(zh=clean(zh)), 0.3, 4000)
+        if en and len(en) > 800 and not re.search(r"[\u4e00-\u9fff]{20}", en):
+            with lock, out_f.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps({"title": t, "kind": kind, "model": name, "text": clean(en)}, ensure_ascii=False) + "\n")
+            n_new += 1
+        if i % 10 == 0:
+            print(f"{name}: {i + 1}", flush=True)
+    print(f"::notice title={name}（{out_f.name}）::新生成 {n_new} 篇", flush=True)
+    return n_new
+
+
 def run_provider(name, key, endpoints, titles, out_f, kinds, n_titles, t_start, budget_min, lock):
     ep = pick_endpoint(name, key, endpoints)
     if not ep:
@@ -354,7 +396,7 @@ def main():
     import threading
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=str(Path(__file__).resolve().parent / "data" / "gen_en"))
-    ap.add_argument("--source", choices=["arxiv", "pubmed", "pmc"], default="arxiv",
+    ap.add_argument("--source", choices=["arxiv", "pubmed", "pmc", "translate"], default="arxiv",
                     help="题目来源：arxiv（摘要类）或 pubmed（农业、经济、医学等，含中国作者；生成整篇论文）")
     ap.add_argument("--n-titles", type=int, default=200, help="每家模型生成多少篇（每篇轮换一种类型）")
     ap.add_argument("--per-category", type=int, default=40)
@@ -363,7 +405,7 @@ def main():
     args = ap.parse_args()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    human = human_pool(out, args.source, args.per_category)
+    human = human_pool(out, "pubmed" if args.source == "translate" else args.source, args.per_category)
     if not human:
         raise SystemExit("没有抓到真人摘要")
     if args.source == "pmc":
@@ -378,10 +420,14 @@ def main():
         if not key:
             print(f"未设置 {env}，跳过 {name}", flush=True)
             continue
-        out_f = out / (f"pm_{name}.jsonl" if args.source == "pubmed" else f"{name}.jsonl")
+        out_f = out / {"pubmed": f"pm_{name}.jsonl", "translate": f"tr_{name}.jsonl"}.get(args.source, f"{name}.jsonl")
         # 各家并行生成（Kimi 限速且会先"思考"，很慢，不能让它拖住其他家）
-        th = threading.Thread(target=run_provider, args=(name, key, endpoints, titles, out_f, kinds, args.n_titles,
-                                                         t_start, args.time_budget_min, lock), daemon=True)
+        if args.source == "translate":
+            th = threading.Thread(target=run_translate, args=(name, key, endpoints, titles, out_f, args.n_titles,
+                                                              t_start, args.time_budget_min, lock), daemon=True)
+        else:
+            th = threading.Thread(target=run_provider, args=(name, key, endpoints, titles, out_f, kinds, args.n_titles,
+                                                             t_start, args.time_budget_min, lock), daemon=True)
         th.start(); threads.append(th)
     for th in threads:
         th.join()
