@@ -9,6 +9,9 @@ on:
       args:
         description: "传给 train_english.py 的额外参数（可留空）"
         default: ""
+      tag:
+        description: "发布到哪个 Release（默认 english-classifier-v3；对比实验用别的名字）"
+        default: "english-classifier-v3"
 
 permissions:
   contents: write
@@ -18,7 +21,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  RELEASE_TAG: english-classifier-v3
+  RELEASE_TAG: ${{ github.event.inputs.tag || 'english-classifier-v3' }}
 
 jobs:
   train:
