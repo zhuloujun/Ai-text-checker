@@ -375,7 +375,7 @@ def en_gen_parts():
             part = "en_gen_fit" if _md5_int("cal|" + r["title"]) % 2 == 0 else "en_gen_test"
             text = re.sub(r"\s+([.,;:])", r"\1", r["text"]) if f.stem == "pmc_human" else r["text"]
             out[part].append({"text": text, "y": 0 if human else 1,
-                              "model": f.stem.replace("_", "-") if human else f"gen-{f.stem.replace('pm_', '').replace('tr_', 'tr-')}"})
+                              "model": f.stem.replace("_", "-") if human else f"gen-{f.stem.replace('pm_', '').replace('tr_', 'tr-').replace('us_', 'us-')}"})
     return out
 
 

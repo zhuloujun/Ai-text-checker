@@ -10,7 +10,7 @@ on:
         description: "每家模型生成多少篇"
         default: "200"
       source:
-        description: "arxiv（摘要）/ pubmed（农业、经济、医学等，含中国作者；生成整篇论文）/ pmc（只抓真人论文正文）/ translate（先写中文再译成英文）"
+        description: "arxiv（摘要）/ pubmed（农业、经济、医学等，含中国作者；生成整篇论文）/ pmc（只抓真人论文正文）/ translate（先写中文再译成英文）/ userstyle（一句中文指令直接写英文论文）"
         default: "pubmed"
 
 permissions:

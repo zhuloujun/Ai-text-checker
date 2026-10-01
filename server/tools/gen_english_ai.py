@@ -38,7 +38,7 @@ PROVIDERS = {
                                         "kimi-k2-0905-preview", "kimi-latest")]),
     # 千帆 v2：账号没开通的模型会返回 401 invalid_model；ernie-speed / ernie-lite 通常免费默认可用
     "wenxin": ("WENXIN_API_KEY", [("https://qianfan.baidubce.com/v2/chat/completions", m)
-                                  for m in ("ernie-4.5-turbo-32k", "ernie-4.5-turbo-128k", "ernie-x1-turbo-32k",
+                                  for m in ("ernie-5.0", "ernie-x1.1-preview", "ernie-4.5-turbo-32k", "ernie-x1-turbo-32k", "ernie-4.5-turbo-128k",
                                             "ernie-4.0-turbo-8k", "ernie-3.5-8k", "ernie-speed-128k",
                                             "ernie-speed-8k", "ernie-lite-8k")]),
     "qwen": ("DASHSCOPE_API_KEY", [("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", "qwen-plus")]),
@@ -362,6 +362,77 @@ def run_translate(name, key, endpoints, titles, out_f, n_titles, t_start, budget
     return n_new
 
 
+# 用户实际用法：一句中文指令让 AI 直接写英文论文（2026-10 用户确认《Scallion》就是这样在文心网页版生成的）。
+ZH_SUBJECTS = ["葱", "大蒜", "生姜", "辣椒", "番茄", "黄瓜", "白菜", "马铃薯", "水稻", "小麦", "玉米", "大豆", "花生", "油菜",
+               "茶叶", "柑橘", "苹果", "葡萄", "草莓", "香蕉", "荔枝", "食用菌", "中药材", "甘蔗", "生猪", "肉鸡", "奶牛", "淡水鱼", "小龙虾"]
+ZH_ASPECTS = ["种植增收增产技术分析", "高产栽培技术要点", "病虫害绿色防控技术", "水肥一体化技术应用", "高效种植模式与经济效益分析",
+              "产业发展现状与对策", "标准化生产技术", "设施栽培关键技术", "品质提升与增效途径", "养殖技术与效益分析"]
+ZH_OTHER = ["我国农村电商发展现状与对策", "乡村振兴背景下农民增收路径", "中小企业融资难问题分析", "股票市场异常收益与规律研究",
+            "人民币汇率波动对出口的影响", "数字经济对区域经济增长的影响", "城市垃圾分类管理问题", "高校思政教育创新路径",
+            "护理干预对术后康复的影响", "中医药治疗慢性胃炎的临床研究", "新能源汽车产业发展分析", "短视频对大学生的影响",
+            "人工智能在教育中的应用", "社区养老服务模式研究", "跨境电商物流问题分析", "旅游业高质量发展路径"]
+USER_STYLE = [
+    "帮我用英文写一篇关于{t}的短篇论文。格式要严格按照论文格式。",
+    "帮我用英文写一篇关于{t}的论文，格式要规范。",
+    "用英文写一篇{t}的学术论文，要有摘要、关键词、引言、正文、结论和参考文献。",
+    "请用英语写一篇关于{t}的小论文，按照期刊论文格式。",
+    "帮我写一篇英文论文，题目是关于{t}的，严格按照论文格式。",
+    "Write a short academic paper in English about {t_en}. Strictly follow the standard paper format.",
+]
+
+
+def user_style_topics(rnd):
+    ts = [s_ + a for s_ in ZH_SUBJECTS for a in ZH_ASPECTS] + ZH_OTHER * 3
+    rnd.shuffle(ts)
+    return ts
+
+
+def working_endpoints(name, key, endpoints, limit=4):
+    """找出这个密钥能用的全部模型（最多 limit 个），轮流使用，覆盖同一家的不同版本（如文心 4.5 / X1）。"""
+    if name == "kimi":
+        endpoints = discover_models(name, key, endpoints)
+    ok = []
+    for url, model in endpoints[:12]:
+        try:
+            chat_once(url, key, model, "Reply with the single word OK.", 0.1)
+            ok.append((url, model))
+            print(f"{name}: 可用 {model}", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"::warning title={name} 接口不可用::{model} → {str(e)[:150]}", flush=True)
+        if len(ok) >= limit:
+            break
+    return ok
+
+
+def run_user_style(name, key, endpoints, out_f, n_titles, t_start, budget_min, lock):
+    eps = working_endpoints(name, key, endpoints)
+    if not eps:
+        return 0
+    rnd = random.Random(f"{name}-{out_f.name}")
+    done = {r["title"] + "|" + r.get("ver", "") for r in load_jsonl(out_f)}
+    n_new = 0
+    for i, t in enumerate(user_style_topics(rnd)[:n_titles]):
+        if (time.time() - t_start) / 60 > budget_min:
+            print(f"::warning title={name}::已到时长上限，先保存已生成的 {n_new} 篇", flush=True)
+            break
+        url, model = eps[i % len(eps)]
+        if f"{t}|{model}" in done:
+            continue
+        tpl = USER_STYLE[i % len(USER_STYLE)]
+        prompt = tpl.format(t=t, t_en=t) if "{t_en}" not in tpl else (
+            f"Write a short academic paper in English on the topic \"{t}\" (translate the topic). Strictly follow the standard paper format.")
+        text = chat(url, key, model, prompt, rnd.choice([0.7, 0.8, 0.95]), 3500)
+        if text and len(text) > 800:
+            with lock, out_f.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps({"title": t, "kind": "user_style", "model": name, "ver": model, "text": clean(text)},
+                                    ensure_ascii=False) + "\n")
+            n_new += 1
+        if i % 20 == 0:
+            print(f"{name}: {i + 1}", flush=True)
+    print(f"::notice title={name}（{out_f.name}）::新生成 {n_new} 篇（模型：{', '.join(m for _, m in eps)}）", flush=True)
+    return n_new
+
+
 def run_provider(name, key, endpoints, titles, out_f, kinds, n_titles, t_start, budget_min, lock):
     ep = pick_endpoint(name, key, endpoints)
     if not ep:
@@ -396,7 +467,7 @@ def main():
     import threading
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=str(Path(__file__).resolve().parent / "data" / "gen_en"))
-    ap.add_argument("--source", choices=["arxiv", "pubmed", "pmc", "translate"], default="arxiv",
+    ap.add_argument("--source", choices=["arxiv", "pubmed", "pmc", "translate", "userstyle"], default="arxiv",
                     help="题目来源：arxiv（摘要类）或 pubmed（农业、经济、医学等，含中国作者；生成整篇论文）")
     ap.add_argument("--n-titles", type=int, default=200, help="每家模型生成多少篇（每篇轮换一种类型）")
     ap.add_argument("--per-category", type=int, default=40)
@@ -405,7 +476,7 @@ def main():
     args = ap.parse_args()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    human = human_pool(out, "pubmed" if args.source == "translate" else args.source, args.per_category)
+    human = human_pool(out, "pubmed" if args.source in ("translate", "userstyle") else args.source, args.per_category)
     if not human:
         raise SystemExit("没有抓到真人摘要")
     if args.source == "pmc":
@@ -420,9 +491,13 @@ def main():
         if not key:
             print(f"未设置 {env}，跳过 {name}", flush=True)
             continue
-        out_f = out / {"pubmed": f"pm_{name}.jsonl", "translate": f"tr_{name}.jsonl"}.get(args.source, f"{name}.jsonl")
+        out_f = out / {"pubmed": f"pm_{name}.jsonl", "translate": f"tr_{name}.jsonl",
+                       "userstyle": f"us_{name}.jsonl"}.get(args.source, f"{name}.jsonl")
         # 各家并行生成（Kimi 限速且会先"思考"，很慢，不能让它拖住其他家）
-        if args.source == "translate":
+        if args.source == "userstyle":
+            th = threading.Thread(target=run_user_style, args=(name, key, endpoints, out_f, args.n_titles,
+                                                               t_start, args.time_budget_min, lock), daemon=True)
+        elif args.source == "translate":
             th = threading.Thread(target=run_translate, args=(name, key, endpoints, titles, out_f, args.n_titles,
                                                               t_start, args.time_budget_min, lock), daemon=True)
         else:

@@ -83,7 +83,7 @@ def build_rows(args, rnd):
         if f.stem in HUMAN_FILES:
             continue
         gen_models.append(f.stem)
-        model = f.stem.replace("pm_", "").replace("tr_", "") + ("-译" if f.stem.startswith("tr_") else "")
+        model = re.sub(r"^(pm|tr|us)_", "", f.stem) + {"tr": "-译", "us": "-用户式"}.get(f.stem[:2], "")
         for g in load_jsonl(f):
             raw.append((clean_ai(g["text"]), 1, f"gen-{model}", split_of(g["title"]), 3))
     if not gen_models:
