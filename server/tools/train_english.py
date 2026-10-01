@@ -38,7 +38,22 @@ def split_of(key: str) -> str:
 
 
 def windows(text: str, rnd: random.Random, k: int) -> list[str]:
-    """与线上一致：英文按 1000–1500 字符的窗口检测。长文最多取 k 个不重叠的窗口（在句末截断）。"""
+    """与线上一致：长文用网站同一套分段规则（app.segmenter）切段，最多取 k 段——训练时见到的段落与线上检测的段落
+    长得一样（带不带小标题、从哪句开始），模型才不会因为分段位置不同而判断大幅波动（v3 的教训：同一段引言，
+    前面带不带一行 Keywords，得分能从 96% 掉到 14%）。另随机去掉一部分段落的首行（小标题），增加鲁棒性。"""
+    if k > 1 and len(text) > 1500:
+        from app.segmenter import segment_text
+        segs = [x.text for x in segment_text(text) if x.counted and x.register == "en" and len(x.text) >= 300]
+        if len(segs) > k:
+            segs = rnd.sample(segs, k)
+        out = []
+        for t in segs:
+            lines = t.split("\n")
+            if len(lines) > 1 and len(lines[0]) < 90 and rnd.random() < 0.4:
+                t = "\n".join(lines[1:])
+            out.append(" ".join(t.split()))
+        if out:
+            return out
     text = " ".join(text.split())
     if len(text) <= 1500:
         return [text]
@@ -77,7 +92,7 @@ def build_rows(args, rnd):
         raw.append((h["text"], 0, "pubmed-human-cn" if h.get("cn") else "pubmed-human", split_of(h["title"]), 1))
     for h in load_jsonl(GEN_DIR / "pmc_human.jsonl"):      # 真人论文正文（引言、方法、结果、讨论），每篇取 4 个窗口
         text = re.sub(r"\s+([.,;:])", r"\1", h["text"])    # 去掉引用标注后留下的"空格 + 句号"，免得成了"真人"的标志
-        raw.append((text, 0, "pmc-human-cn" if h.get("cn") else "pmc-human", split_of(h["title"]), 4))
+        raw.append((text, 0, "pmc-human-cn" if h.get("cn") else "pmc-human", split_of(h["title"]), 6))
     gen_models = []
     for f in sorted(GEN_DIR.glob("*.jsonl")):
         if f.stem in HUMAN_FILES or any(f.stem.startswith(x) for x in args.skip_prefix):
@@ -85,7 +100,7 @@ def build_rows(args, rnd):
         gen_models.append(f.stem)
         model = re.sub(r"^(pm|tr|us)_", "", f.stem) + {"tr": "-译", "us": "-用户式"}.get(f.stem[:2], "")
         for g in load_jsonl(f):
-            raw.append((clean_ai(g["text"]), 1, f"gen-{model}", split_of(g["title"]), 3))
+            raw.append((clean_ai(g["text"]), 1, f"gen-{model}", split_of(g["title"]), 6))
     if not gen_models:
         raise SystemExit("tools/data/gen_en 里还没有生成数据，请先运行“生成英文 AI 训练数据”工作流")
     mage = ev.read_mage(Path(args.mage_dir) / "valid.csv")
