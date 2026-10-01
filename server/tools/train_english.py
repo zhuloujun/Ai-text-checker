@@ -80,7 +80,7 @@ def build_rows(args, rnd):
         raw.append((text, 0, "pmc-human-cn" if h.get("cn") else "pmc-human", split_of(h["title"]), 4))
     gen_models = []
     for f in sorted(GEN_DIR.glob("*.jsonl")):
-        if f.stem in HUMAN_FILES:
+        if f.stem in HUMAN_FILES or any(f.stem.startswith(x) for x in args.skip_prefix):
             continue
         gen_models.append(f.stem)
         model = re.sub(r"^(pm|tr|us)_", "", f.stem) + {"tr": "-译", "us": "-用户式"}.get(f.stem[:2], "")
@@ -119,6 +119,7 @@ def main():
     ap.add_argument("--max-len", type=int, default=320)
     ap.add_argument("--n-mage-human", type=int, default=6000, help="MAGE 人写取多少段（各领域均衡）")
     ap.add_argument("--n-mage-ai", type=int, default=2500, help="MAGE AI 取多少段")
+    ap.add_argument("--skip-prefix", nargs="*", default=[], help="不使用这些前缀的生成数据（如 tr_），用于对比实验")
     ap.add_argument("--label-smoothing", type=float, default=0.1)
     ap.add_argument("--time-budget-min", type=float, default=270)
     args = ap.parse_args()
