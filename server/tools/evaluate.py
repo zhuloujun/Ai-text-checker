@@ -365,7 +365,7 @@ def en_gen_parts():
     if not GEN_EN_DIR.exists():
         return out
     for f in sorted(GEN_EN_DIR.glob("*.jsonl")):
-        human = f.stem == "arxiv_human"
+        human = f.stem.endswith("_human")
         for line in f.read_text("utf-8").splitlines():
             if not line.strip():
                 continue
@@ -373,8 +373,9 @@ def en_gen_parts():
             if _md5_int(r["title"]) % 5 != 0:
                 continue
             part = "en_gen_fit" if _md5_int("cal|" + r["title"]) % 2 == 0 else "en_gen_test"
-            out[part].append({"text": r["text"], "y": 0 if human else 1,
-                              "model": "arxiv-human" if human else f"gen-{f.stem}"})
+            text = re.sub(r"\s+([.,;:])", r"\1", r["text"]) if f.stem == "pmc_human" else r["text"]
+            out[part].append({"text": text, "y": 0 if human else 1,
+                              "model": f.stem.replace("_", "-") if human else f"gen-{f.stem.replace('pm_', '')}"})
     return out
 
 

@@ -21,6 +21,7 @@ import json
 import math
 import os
 import random
+import re
 import sys
 import time
 from pathlib import Path
@@ -63,7 +64,8 @@ def build_rows(args, rnd):
     for h in load_jsonl(GEN_DIR / "pubmed_human.jsonl"):
         raw.append((h["text"], 0, "pubmed-human-cn" if h.get("cn") else "pubmed-human", split_of(h["title"]), 1))
     for h in load_jsonl(GEN_DIR / "pmc_human.jsonl"):      # 真人论文正文（引言、方法、结果、讨论），每篇取 4 个窗口
-        raw.append((h["text"], 0, "pmc-human-cn" if h.get("cn") else "pmc-human", split_of(h["title"]), 4))
+        text = re.sub(r"\s+([.,;:])", r"\1", h["text"])    # 去掉引用标注后留下的"空格 + 句号"，免得成了"真人"的标志
+        raw.append((text, 0, "pmc-human-cn" if h.get("cn") else "pmc-human", split_of(h["title"]), 4))
     gen_models = []
     for f in sorted(GEN_DIR.glob("*.jsonl")):
         if f.stem in HUMAN_FILES:
