@@ -381,6 +381,34 @@ USER_STYLE = [
 ]
 
 
+# 非论文体裁：童话 / 故事、读后感、清单与指南、议论文、演讲稿、邮件与说明等（2026-10 用户用文心写的童话、读后感、
+# 家庭实施清单都漏检：英文第二分类器只见过论文，没见过这些体裁）。中文一句话指令为主，与用户实际用法一致。
+GENRE_STYLE = [
+    "帮我用英文写一篇关于{t}的童话故事，适合睡前读给孩子听。",
+    "用英文写一个{t}的短篇故事，大约500词。",
+    "帮我用英文写一篇《{t}》的读后感。",
+    "请用英文写一份关于{t}的分阶段实施清单，要具体、可操作。",
+    "帮我用英文写一篇关于{t}的议论文。",
+    "用英文写一篇以{t}为主题的演讲稿。",
+    "帮我用英文写一篇关于{t}的散文，语言优美一些。",
+    "用英文写一份{t}的实用指南，分步骤列出来。",
+    "帮我用英文写一封关于{t}的正式邮件。",
+    "Write a short English essay about {t}.",
+]
+GENRE_TOPICS = ["小狐狸与月亮", "勇敢的小兔子", "会说话的大树", "星星和小女孩", "迷路的小熊", "海边的灯塔", "小龙的第一次飞行",
+                "风筝和风", "老爷爷的花园", "冬天里的小麻雀", "培养孩子自主学习习惯", "家庭垃圾分类", "提高睡眠质量",
+                "中学生时间管理", "老人智能手机使用", "家庭理财", "养成阅读习惯", "减少孩子看手机的时间", "健康饮食",
+                "坚持的意义", "友谊的价值", "保护环境", "科技改变生活", "传统文化的传承", "失败是成功之母", "感恩父母",
+                "读书的意义", "青春与梦想", "团队合作", "诚信", "乡村的变化", "家乡的春节", "一次难忘的旅行",
+                "小王子", "老人与海", "西游记", "红楼梦", "傲慢与偏见", "活着", "海底两万里", "夏洛的网"]
+
+
+def genre_topics(rnd):
+    ts = GENRE_TOPICS * 3
+    rnd.shuffle(ts)
+    return ts
+
+
 def user_style_topics(rnd):
     ts = [s_ + a for s_ in ZH_SUBJECTS for a in ZH_ASPECTS] + ZH_OTHER * 3
     rnd.shuffle(ts)
@@ -411,14 +439,16 @@ def run_user_style(name, key, endpoints, out_f, n_titles, t_start, budget_min, l
     rnd = random.Random(f"{name}-{out_f.name}")
     done = {r["title"] + "|" + r.get("ver", "") for r in load_jsonl(out_f)}
     n_new = 0
-    for i, t in enumerate(user_style_topics(rnd)[:n_titles]):
+    topics, styles = (genre_topics(rnd), GENRE_STYLE) if out_f.name.startswith("ge_") else (user_style_topics(rnd), USER_STYLE)
+    for i, t in enumerate(topics[:n_titles]):
         if (time.time() - t_start) / 60 > budget_min:
             print(f"::warning title={name}::已到时长上限，先保存已生成的 {n_new} 篇", flush=True)
             break
         url, model = eps[i % len(eps)]
         if f"{t}|{model}" in done:
             continue
-        tpl = USER_STYLE[i % len(USER_STYLE)]
+        done.add(f"{t}|{model}")
+        tpl = styles[(i + i // len(styles)) % len(styles)]
         prompt = tpl.format(t=t, t_en=t) if "{t_en}" not in tpl else (
             f"Write a short academic paper in English on the topic \"{t}\" (translate the topic). Strictly follow the standard paper format.")
         text = chat(url, key, model, prompt, rnd.choice([0.7, 0.8, 0.95]), 3500)
@@ -467,7 +497,7 @@ def main():
     import threading
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=str(Path(__file__).resolve().parent / "data" / "gen_en"))
-    ap.add_argument("--source", choices=["arxiv", "pubmed", "pmc", "translate", "userstyle"], default="arxiv",
+    ap.add_argument("--source", choices=["arxiv", "pubmed", "pmc", "translate", "userstyle", "genre"], default="arxiv",
                     help="题目来源：arxiv（摘要类）或 pubmed（农业、经济、医学等，含中国作者；生成整篇论文）")
     ap.add_argument("--n-titles", type=int, default=200, help="每家模型生成多少篇（每篇轮换一种类型）")
     ap.add_argument("--per-category", type=int, default=40)
@@ -476,7 +506,7 @@ def main():
     args = ap.parse_args()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    human = human_pool(out, "pubmed" if args.source in ("translate", "userstyle") else args.source, args.per_category)
+    human = human_pool(out, "pubmed" if args.source in ("translate", "userstyle", "genre") else args.source, args.per_category)
     if not human:
         raise SystemExit("没有抓到真人摘要")
     if args.source == "pmc":
@@ -492,9 +522,9 @@ def main():
             print(f"未设置 {env}，跳过 {name}", flush=True)
             continue
         out_f = out / {"pubmed": f"pm_{name}.jsonl", "translate": f"tr_{name}.jsonl",
-                       "userstyle": f"us_{name}.jsonl"}.get(args.source, f"{name}.jsonl")
+                       "userstyle": f"us_{name}.jsonl", "genre": f"ge_{name}.jsonl"}.get(args.source, f"{name}.jsonl")
         # 各家并行生成（Kimi 限速且会先"思考"，很慢，不能让它拖住其他家）
-        if args.source == "userstyle":
+        if args.source in ("userstyle", "genre"):
             th = threading.Thread(target=run_user_style, args=(name, key, endpoints, out_f, args.n_titles,
                                                                t_start, args.time_budget_min, lock), daemon=True)
         elif args.source == "translate":
