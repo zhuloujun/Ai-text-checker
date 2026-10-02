@@ -778,3 +778,24 @@ def test_chinese_paper_titles_keywords_and_law_references():
     assert not any(s.register == "zh_poetry" for s in segs)          # "关键词：……；……" 不是诗
     assert not any(s.title.startswith("二、") for s in segs)           # 章节标题不当作品名
     assert all(s.kind == "reference" for s in segs if "Government Procurement" in s.text)
+
+
+def test_chinese_whole_document_verdict(client, monkeypatch):
+    """中文作品：中文分类器各段加权中位数达到阈值时，未过阈值的段落标"轻度疑似（整篇判断）"；阈值调到 1.01 时不触发。"""
+    from app import config
+    import app.main as m
+    cal = dict(m.engine.cal)
+    profs = dict(cal.get("profiles") or {})
+    for k in ("zh", "zh_short"):
+        profs[k] = {"threshold": 0.999, "lr": None, "calibrated": True}
+    monkeypatch.setattr(m.engine, "cal", dict(cal, profiles=profs))
+    para = "人的大脑究竟能够记住多少东西，这是一个很有意思的问题。现实生活中可以看到，有些人经过长期训练以后能够记住大量数字、单词或者其他信息。" * 3
+    doc = "论记忆能力的极限\n摘要\n" + para + "\n一、引言\n" + para + "\n二、记忆\n" + para + "\n三、结论\n" + para
+    h = {"Authorization": "Bearer " + issue(client)}
+    monkeypatch.setattr(config, "ZH_DOC_THRESHOLD", 0.0)
+    res = client.post("/v1/detect", json={"text": doc, "wait": True}, headers=h).json()["result"]
+    zh = [s for s in res["segments"] if s["register"] == "zh" and s["kind"] == "body"]
+    assert len(zh) >= 3 and all(s["label"] == "轻度疑似（整篇判断）" for s in zh)
+    monkeypatch.setattr(config, "ZH_DOC_THRESHOLD", 1.01)
+    res = client.post("/v1/detect", json={"text": doc + "。", "wait": True}, headers=h).json()["result"]
+    assert not any(s["label"] == "轻度疑似（整篇判断）" for s in res["segments"])

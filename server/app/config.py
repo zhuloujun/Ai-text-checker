@@ -76,6 +76,10 @@ USER_SAMPLE_SHARE = float(os.getenv("USER_SAMPLE_SHARE", "0.3") or 0.3)
 FAST_MODE_MAX_SEGMENTS = _int("FAST_MODE_MAX_SEGMENTS", 60)  # 快速模式下语言模型最多检测多少段
 # 相邻段落平滑强度（0 = 不平滑，0.3 = 本段 70% + 相邻段 30%）
 SMOOTHING = float(os.getenv("SMOOTHING", "0.3") or 0.3)
+# 中文作品整篇判断：同一篇（≥3 段现代汉语正文）MPU 中文分类器得分的中位数（按字数加权）达到此值时，
+# 本篇未过阈值的段落按"轻度疑似（整篇判断）"计入。验证（2026-10，线上服务实测）：77 篇知乎真人长回答中
+# 未被判为 AI 的最高 0.79；DeepSeek / 文心 24 篇中文论文全部 ≥ 0.99，Kimi k3 6 篇里 5 篇 0.89–0.99，Claude 论文 0.90。
+ZH_DOC_THRESHOLD = float(os.getenv("ZH_DOC_THRESHOLD", "0.88") or 0.88)
 EN_PAPER_DOC_THRESHOLD = float(os.getenv("EN_PAPER_DOC_THRESHOLD", "0.85") or 0.85)   # 英文论文整篇判断阈值（第二分类器中位数）
 WORK_MAJORITY = float(os.getenv("WORK_MAJORITY", "0.6") or 0.6)   # 同篇已判 AI 的文字占比达到此值，接近阈值的段落按整篇计入
 # 文言虚词（之乎者也矣焉哉曰…）占汉字比例超过此值的段落，视为以古籍引文为主，不计入 AI 率

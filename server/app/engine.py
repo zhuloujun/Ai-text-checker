@@ -418,6 +418,27 @@ class Engine:
                                     and smoothed[i] < float(prof[i][0].get("threshold", 0.5)))
                     work_ai.difference_update(idxs)
 
+        # 5) 中文作品的整篇判断：MPU 中文分类器各段得分的加权中位数达到 ZH_DOC_THRESHOLD 时，本篇未过阈值的段落
+        #    按"轻度疑似（整篇判断）"计入。针对的是 Claude、Kimi k3 这类单段特征不明显、但整篇风格一致的中文 AI 文章。
+        zh_doc_ai = set()
+        for (blk, reg), idxs in groups.items():
+            if reg != "zh":
+                continue
+            vals = sorted((results[i]["classifier"], len(segs_by_idx[i].text)) for i in idxs
+                          if results[i].get("classifier") is not None)
+            if len(vals) < 3:
+                continue
+            half, acc, med = sum(n for _, n in vals) / 2, 0, None
+            for p_, n in vals:
+                acc += n
+                if acc >= half:
+                    med = p_
+                    break
+            if med is not None and med >= config.ZH_DOC_THRESHOLD:
+                zh_doc_ai.update(i for i in idxs if smoothed.get(i) is not None
+                                 and smoothed[i] < float(prof[i][0].get("threshold", 0.5)) and i not in work_ai)
+        work_ai |= zh_doc_ai
+
         seg_out, counted_chars, prob_weighted = [], 0, 0.0
         chars_by_level = {"high": 0, "mid": 0, "light": 0, "low": 0}
         level_counts = {"high": 0, "mid": 0, "light": 0, "low": 0}
@@ -504,8 +525,12 @@ class Engine:
             notes.append(f"按整篇判断：这篇英文论文多数段落带有明显的大模型写作特征（整篇中位得分达到阈值），另有 {len(paper_ai)} 段"
                          "单看得分不高，也按“中度疑似（整篇判断）”计入。单段得分会随分段位置波动，整篇结论更可靠；"
                          "如果其中有你亲自写的段落，请以整篇结论为参考、逐段复核。")
-        if work_ai:
-            notes.append(f"有 {len(work_ai)} 段 AI 概率接近阈值，但所在作品的大部分段落已判为疑似 AI，"
+        if zh_doc_ai:
+            notes.append(f"按整篇判断：有 {len(zh_doc_ai)} 段中文单看得分未过阈值，但所在文章整体带有明显的大模型写作风格"
+                         "（中文分类器整篇中位得分达到阈值），按“轻度疑似（整篇判断）”计入。Claude、Kimi 等模型写的中文常见这种情况；"
+                         "如果其中有你亲自写的段落，请逐段复核。")
+        if work_ai - zh_doc_ai:
+            notes.append(f"有 {len(work_ai - zh_doc_ai)} 段 AI 概率接近阈值，但所在作品的大部分段落已判为疑似 AI，"
                          "按整篇判断计为“轻度疑似（整篇判断）”（AI 文章通常整篇生成）。")
         if near_chars and counted_chars:
             notes.append(f"另有 {near_chars / counted_chars:.0%} 的文字 AI 概率接近阈值（已标“接近阈值”，未计入 AI 率），"
