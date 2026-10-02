@@ -734,3 +734,25 @@ def test_english_paper_whole_document_verdict(client, monkeypatch):
     en = [s for s in res["segments"] if s["register"] == "en" and s["kind"] == "body"]
     assert len(en) >= 3 and all(s["label"] == "中度疑似（整篇判断）" for s in en)
     assert res["summary"]["ai_rate"] == 1.0
+
+
+def test_titles_drawings_and_references_in_mixed_document():
+    """英文标题（Title Case）开始新作品；"Weekly Tasks:" 这类英文小节标签不算；制表符框图不参与检测；
+    参考文献后面紧跟的另一篇（没有 Abstract 等标题的清单类文章）重新计入。"""
+    from app.segmenter import is_drawing_line, is_title
+    assert is_title("The Little Fire Fox and the Star Stone")
+    assert is_title("9-Month Staged Family Implementation Checklist (English Version)")
+    assert is_title("弘扬长征精神,传承红色文化")
+    assert not is_title("Weekly Tasks:") and not is_title("Stage 1: Boundary Building (Month 1-2)")
+    assert not is_title("Common Cold; Prevention; Treatment; Viral Infection; Public Health")
+    assert is_drawing_line("│    Smart Home     │    Industrial     │") and is_drawing_line("┌──────────┐")
+    line = ("Negotiate with your child to confirm a fixed independent learning period every day after school, "
+            "and write the agreed time on a visible whiteboard at home")
+    doc = ("References\nAtzori, L., Iera, A., & Morabito, G.(2010).The Internet of Things: A survey.Computer Networks, 54(15), 2787-2805.\n\n"
+           "9-Month Staged Family Implementation Checklist (English Version)\n"
+           "This checklist fully aligns with the core logic of the previous paper and can be directly implemented by families.\n"
+           + "\n".join([line] * 8))
+    segs = segment_text(doc)
+    assert [s.kind for s in segs][0] == "reference" and "Atzori" in segs[0].text and "Checklist" not in segs[0].text
+    body = [s for s in segs if s.kind == "body"]
+    assert body and body[0].text.startswith("9-Month Staged")

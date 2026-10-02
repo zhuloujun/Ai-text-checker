@@ -16,16 +16,27 @@ _REF_ENTRY = re.compile(r"^\s*(\[\d+\]|［\d+］|\(\d+\)|\d+[.、]\s)|\b(19|20)\
                         re.IGNORECASE)
 
 
-def _ends_references(line: str) -> bool:
-    """参考文献之后又开始了新的正文（例如一个文档里放了两篇论文）：出现章节标题（摘要 / Abstract / 引言…），
-    或出现一段不像参考文献条目的长段正文（≥ 250 字、含 2 句以上）。"""
+def _looks_ref(t: str) -> bool:
+    t = t.strip()
+    return bool(_REF_ENTRY.search(t[:160])) or bool(re.search(r"\bet al\.|\bJ\.|Press\b|出版社|学报", t))
+
+
+def _ends_references(line: str, prev_lines: list) -> bool:
+    """参考文献之后又开始了新的正文（例如一个文档里放了两篇论文）：
+    出现章节标题（摘要 / Abstract / 引言…）；或一段不像参考文献条目的长段正文（≥ 250 字、含 2 句以上）；
+    或连续两行都不像参考文献条目（没有年份、卷期、[1] 编号等）的 ≥ 60 字正文行。"""
     s = line.strip()
     if not s or _REF_HEAD.match(s):
         return False
     if is_section_heading(s):
         return True
-    if len(s) >= 250 and not _REF_ENTRY.search(s[:120]):
-        return len(re.findall(r"[。！？!?]|\.\s+[A-Z]|\.(?=[A-Z][a-z])", s)) >= 2
+    looks_ref = _looks_ref
+    if len(s) >= 250 and not looks_ref(s):
+        return len(re.findall(r"[。！？!?]|\.\s+[A-Z]|\.(?=[A-Z][a-z])", s)) >= 2 or len(s) >= 400
+    prev = [p.strip() for p in prev_lines if p.strip() and not _RULE_LINE.match(p.strip())]
+    if len(s) >= 60 and not looks_ref(s) and prev and len(prev[-1]) >= 60 and not looks_ref(prev[-1]) \
+            and not _REF_HEAD.match(prev[-1]):
+        return True
     return False
 _CJK = re.compile(r"[㐀-䶿一-鿿]")
 _LATIN = re.compile(r"[A-Za-z]")
@@ -75,13 +86,36 @@ def modern_ratio(text: str) -> float:
     return len(_MODERN.findall(text)) / cjk
 
 
+_EN_TITLE_SKIP = re.compile(r"^(stage|step|part|phase|section|chapter|appendix|table|figure|fig\.|week|month|day)\b", re.I)
+_EN_SMALL = {"a", "an", "the", "and", "or", "of", "in", "on", "for", "to", "with", "by", "at", "from", "as", "vs", "via", "into"}
+
+
+def is_english_title(line: str) -> bool:
+    """英文作品标题：单独一行、3–16 个词、不以句号结尾、实词大多首字母大写（Title Case），
+    不是编号小节（"2. Methods"）或 "Stage 1: …" 这类分节标签。"""
+    s = line.strip().strip("《》\"'")
+    if not s or len(s) > 110 or _CJK.search(s) or re.search(r"[.!?;:,]$", s) or ";" in s or _BOX.search(s):
+        return False
+    if re.match(r"^\d+(\.\d+)*[.)、]?\s", s) or _EN_TITLE_SKIP.match(s):
+        return False
+    words = re.findall(r"[A-Za-z][A-Za-z'’\-]*", s)
+    if not 3 <= len(words) <= 16:
+        return False
+    content = [w for w in words if w.lower() not in _EN_SMALL]
+    return bool(content) and sum(w[0].isupper() for w in content) >= 0.8 * len(content)
+
+
 def is_title(line: str) -> bool:
     s = line.strip()
+    if s and len(s) <= 110 and is_english_title(s):
+        return True
+    if s and 6 <= len(s) <= 24 and re.fullmatch(r"[\u4e00-\u9fff]{3,11}[,，、\s][\u4e00-\u9fff]{3,11}", s):
+        return True                                   # "弘扬长征精神，传承红色文化" 这类两句式标题
     if not s or len(s) > 40:
         return False
     if re.search(r"[。！？!?；;，,、]$", s):          # 像句子或诗行的结尾
         return False
-    if re.fullmatch(r".{1,12}[：:]", s):              # "对联：" 这类短标签
+    if re.fullmatch(r".{1,12}[：:]", s) and _CJK.search(s):   # "对联：" 这类短标签（英文的 "Weekly Tasks:" 是小节标签，不算新作品）
         return True
     # 单独一行、不带任何标点的短标题（如"黄四娘"）；5 字 / 7 字的可能是没加标点的诗句，不算
     cjk = len(_CJK.findall(s))
@@ -101,6 +135,14 @@ _SECTION_NAMES = re.compile(
     r"acknowledge?ments?|appendix|摘\s*要|关键词|引\s*言|绪\s*论|前\s*言|文献综述|研究方法|研究设计|结\s*论|结\s*语|讨\s*论|致\s*谢|附\s*录)"
     r"\b.{0,50}$", re.I)
 _RULE_LINE = re.compile(r"^[-—_*=~·\s]{3,}$")
+_BOX = re.compile(r"[\u2500-\u257f\u2580-\u259f]")
+
+
+def is_drawing_line(line: str) -> bool:
+    """用制表符画的框图 / 表格线（┌─┬─┐、│ Smart Home │ …）：不是正文，不参与检测。"""
+    s = line.strip()
+    n = len(_BOX.findall(s))
+    return bool(s) and (n >= 3 or (n >= 1 and (_BOX.match(s[0]) is not None or _BOX.match(s[-1]) is not None)))
 
 
 def is_section_heading(line: str) -> bool:
@@ -237,15 +279,14 @@ def segment_text(text: str, exclude_references: bool = True, flag_quotations: bo
         if in_refs and _AFTER_REF_HEAD.match(stripped):
             flush("reference")
             in_refs = False
-        elif in_refs and _ends_references(stripped):
+        elif in_refs and _ends_references(stripped, buf.split("\n")):
             # 参考文献结束、新作品开始：参考文献末尾紧挨着的标题行（新论文题目）归入新作品
             lines = buf.rstrip("\n").split("\n")
             carry = []
-            while lines and (not lines[-1].strip() or _RULE_LINE.match(lines[-1].strip())
-                             or (is_title(lines[-1]) or (len(lines[-1].strip()) <= 120 and not _REF_ENTRY.search(lines[-1])
-                                                          and not re.search(r"[.。]$", lines[-1].strip())))):
+            while lines and len(lines) > 1 and (not lines[-1].strip() or _RULE_LINE.match(lines[-1].strip())
+                                                 or not _looks_ref(lines[-1])):
                 carry.insert(0, lines.pop())
-                if len(carry) > 4:
+                if len(carry) > 8:
                     break
             carry_text = "\n".join(l for l in carry if l.strip() and not _RULE_LINE.match(l.strip())).strip()
             buf = "\n".join(lines) + "\n" if lines else ""
@@ -263,7 +304,7 @@ def segment_text(text: str, exclude_references: bool = True, flag_quotations: bo
             if len(buf) > target * 4:
                 flush("reference")
             continue
-        if not stripped or _RULE_LINE.match(stripped):
+        if not stripped or _RULE_LINE.match(stripped) or is_drawing_line(stripped):
             if buf.strip():
                 pending_break = True
             continue
