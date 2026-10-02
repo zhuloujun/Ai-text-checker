@@ -49,7 +49,7 @@ jobs:
                   problems.append(doc + "：" + " | ".join(
                       f"{g.get('label') or g.get('kind')} p{round((g.get('prob') or g.get('ref_prob') or 0) * 100)} "
                       f"cls{round((g.get('raw') or {}).get('classifier', -1) * 100)} en2{round((g.get('raw') or {}).get('classifier_en2', -1) * 100)} "
-                      f"ppl{round(2.718 ** (g.get('raw') or {}).get('ppl', 0), 1)} 「{g['text'][:12].replace(chr(10), ' ')}」"
+                      f"ppl{round(2.718 ** (g.get('raw') or {}).get('ppl', 0), 1)} bu{round((g.get('raw') or {}).get('lp_burstiness') or 0, 2)} n{g.get('chars')} 「{g['text'][:12].replace(chr(10), ' ')}」"
                       for g in res.get("segments", [])))
               if doc.startswith("Scallion"):
                   print("::notice title=段落详情::" + json.dumps([{"t": g["text"][:60], "e": g["text"][-40:], "raw": g.get("raw"), "reg": g.get("register")}
