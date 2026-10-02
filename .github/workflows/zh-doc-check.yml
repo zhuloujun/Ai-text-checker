@@ -1,0 +1,37 @@
+# 中文整篇判断的验证数据：真人中文长文 + 国产大模型中文论文，送线上服务检测，结果提交回仓库（只能手动运行）
+name: 中文整篇判断验证
+
+on:
+  workflow_dispatch:
+    inputs:
+      n_human:
+        description: "每个真人来源取多少篇"
+        default: "80"
+      n_ai:
+        description: "每家大模型写多少篇中文论文"
+        default: "12"
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - name: 生成并检测
+        env:
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN || secrets.HF_ADMIN_TOKEN }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          KIMI_API_KEY: ${{ secrets.KIMI_API_KEY || secrets.MOONSHOT_API_KEY }}
+          WENXIN_API_KEY: ${{ secrets.WENXIN_API_KEY || secrets.APIKey_20260930163541 || secrets.APIKEY_20260930163541 }}
+        run: python -u server/tools/zh_doc_check.py --n-human "${{ github.event.inputs.n_human || '80' }}" --n-ai "${{ github.event.inputs.n_ai || '12' }}"
+      - name: 提交
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server/tools/data/zh_doc_check.json server/tools/data/gen_zh || true
+          git commit -m "zh doc check results [skip ci]" || exit 0
+          git pull --rebase origin main && git push origin HEAD:main
