@@ -70,6 +70,9 @@ SHORT_SEGMENT_CHARS = _int("SHORT_SEGMENT_CHARS", 200)
 SHORT_CHARS_ZH = _int("SHORT_CHARS_ZH", 100)
 SHORT_WORDS_EN = _int("SHORT_WORDS_EN", 150)
 # "疑似名篇"判定：语言模型困惑度低于此值且分类器判为人写
+# 中文段落困惑度（Qwen2.5-0.5B）低于此值：模型几乎逐字复现，视为公开名篇原文（《背影》实测 1.3–2.4），不计入 AI 率。
+# 依据：评估集中约 1300 段中文 AI 文本（GLM / GPT-4o / Qwen / DeepSeek / 文心 / Kimi）困惑度最低 3.57。
+FAMOUS_PPL_ZH = float(os.getenv("FAMOUS_PPL_ZH", "3.0") or 3.0)
 MEMORIZED_PPL = float(os.getenv("MEMORIZED_PPL", "3.5") or 3.5)
 # 管理页校准时，用户样本与内置公开数据合并，用户样本合计所占的权重比例
 USER_SAMPLE_SHARE = float(os.getenv("USER_SAMPLE_SHARE", "0.3") or 0.3)

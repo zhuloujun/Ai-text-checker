@@ -799,3 +799,26 @@ def test_chinese_whole_document_verdict(client, monkeypatch):
     monkeypatch.setattr(config, "ZH_DOC_THRESHOLD", 1.01)
     res = client.post("/v1/detect", json={"text": doc + "。", "wait": True}, headers=h).json()["result"]
     assert not any(s["label"] == "轻度疑似（整篇判断）" for s in res["segments"])
+
+
+def test_short_english_title_after_chinese_and_quote_split():
+    zh = "人的生活变了，草原上的一切都也随着变。就拿蒙古包说吧，从前每被呼为毡庐，今天却变了样。" * 4
+    en = ("The twilight lingers over the ancient town, wrapping the low eaves and mossy alleyways in a thin veil. "
+          "Walking down this familiar lane, my footsteps sound particularly solitary, echoing against the damp walls. ") * 3
+    segs = segment_text("《草原》\n" + zh + "\nReturning Home\n" + en)
+    assert {s.block for s in segs if s.register == "en"} != {s.block for s in segs if s.register == "zh"}
+    assert any(s.title == "Returning Home" for s in segs)
+    quote = ("他再三嘱咐茶房，甚是仔细。但他终于不放心，怕茶房不妥帖；颇踌躇了一会。他只说：“不要紧，他们去不好！”" * 6
+             + "\n我们过了江，进了车站。")
+    assert not any(s.text.startswith("”") for s in segment_text(quote))
+
+
+def test_famous_chinese_text_with_tiny_perplexity_not_counted(client, monkeypatch):
+    """困惑度极低（模型逐字背过）的中文段落视为名篇原文，不计入 AI 率。"""
+    from app import config
+    monkeypatch.setattr(config, "FAMOUS_PPL_ZH", 1e9)
+    para = "我与父亲不相见已二年余了，我最不能忘记的是他的背影。那年冬天，祖母死了，父亲的差使也交卸了，正是祸不单行的日子。" * 3
+    h = {"Authorization": "Bearer " + issue(client)}
+    res = client.post("/v1/detect", json={"text": "《背影》\n" + para + "\n\n" + para, "wait": True}, headers=h).json()["result"]
+    zh = [s for s in res["segments"] if s["register"] == "zh"]
+    assert zh and all(s["kind"] == "quotation" for s in zh)

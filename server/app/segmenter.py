@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 
 from . import config
 
-_SENT_END = re.compile(r"(?<=[。！？!?；;])")
+_SENT_END = re.compile(r"(?<=[。！？!?；;])(?![”’」』\"'])|(?<=[。！？!?；;][”’」』\"'])")
 _REF_HEAD = re.compile(
     r"^\s*(?:[一二三四五六七八九十\d]+[、.．\s]*)?(参考文献|参考书目|引用文献|征引文献|主要参考文献|References|Bibliography|Works Cited)\s*[:：]?\s*$",
     re.IGNORECASE,
@@ -260,8 +260,16 @@ def segment_text(text: str, exclude_references: bool = True, flag_quotations: bo
     lines_all = [l.strip() for l in text.splitlines()]
     nonempty = [l for l in lines_all if l]
     paper_titles = {a for a, b in zip(nonempty, nonempty[1:])
-                    if _ABSTRACT_HEAD.match(b) and 4 <= len(a) <= 80 and not is_section_heading(a)
+                    if _ABSTRACT_HEAD.match(b) and 4 <= len(a) <= 160 and not is_section_heading(a)
                     and not re.search(r"[。！？!?；;，,]$", a)}
+    # 中文之后紧跟的短英文标题（"Returning Home"）：1–4 个首字母大写的词、下一行是英文长段落、上一行是中文
+    for prev, a, b in zip(nonempty, nonempty[1:], nonempty[2:]):
+        words = re.findall(r"[A-Za-z][A-Za-z'’\-]*", a)
+        if (1 <= len(words) <= 4 and len(a) <= 40 and all(w[0].isupper() for w in words)
+                and not re.search(r"[.!?;:,]$", a) and not _CJK.search(a) and _CJK.search(prev)
+                and len(b) >= 150 and len(_LATIN.findall(b)) >= 0.6 * len(b) and not is_section_heading(a)
+                and not _EN_TITLE_SKIP.match(a)):
+            paper_titles.add(a)
 
     def flush(kind_override=None):
         nonlocal buf

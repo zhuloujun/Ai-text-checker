@@ -360,6 +360,15 @@ class Engine:
                 reg = "en_paper"
             prof[s.index] = scoring.profile_for(cal, reg)
         memo = {s.index for s in scored if memorized(results[s.index])}
+        # 中文名篇原文（如朱自清《背影》）：困惑度极低说明语言模型逐字背过，不论分类器怎么判，都不计入 AI 率
+        famous = {s.index for s in counted if s.register == "zh" and results[s.index].get("ppl") is not None
+                  and math.exp(results[s.index]["ppl"]) < config.FAMOUS_PPL_ZH}
+        for s in segs:
+            if s.index in famous:
+                s.kind = "quotation"
+                s.notes = list(s.notes) + ["语言模型几乎能逐字复现，疑为公开名篇原文，不计入 AI 率"]
+        memo |= famous
+        counted = [s for s in segs if s.counted]
 
         def for_combine(i):
             if i in memo:
@@ -514,8 +523,11 @@ class Engine:
             notes.append(f"{n_refonly} 段诗词只给参考值、不计入 AI 率：评估发现诗词检测在不同来源之间很不稳定——"
                          "唐诗宋词名篇会被误判（约 19%），复述故事情节的 AI 诗又几乎认不出。"
                          "如需让诗词计入，可在管理页用你自己标注的诗词校准。")
-        if memo:
-            notes.append(f"有 {len(memo)} 段文字语言模型几乎能逐字复现、而分类器判为人写，疑为公开名篇原文"
+        if famous:
+            notes.append(f"有 {len(famous)} 段中文语言模型几乎能逐字复现（困惑度极低），疑为公开发表的名篇原文"
+                         "（如课文、名家散文），AI 生成的文字达不到这种程度，这些段落不计入 AI 率。")
+        if memo - famous:
+            notes.append(f"有 {len(memo - famous)} 段文字语言模型几乎能逐字复现、而分类器判为人写，疑为公开名篇原文"
                          "（如经典诗文、名人演讲）；这些段落不采信语言模型信号，只按分类器判断。")
         n_short = sum(1 for s in counted if is_short(s, score_text(s)))
         if n_short:
