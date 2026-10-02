@@ -34,7 +34,7 @@ def _ends_references(line: str, prev_lines: list) -> bool:
     if len(s) >= 250 and not looks_ref(s):
         return len(re.findall(r"[。！？!?]|\.\s+[A-Z]|\.(?=[A-Z][a-z])", s)) >= 2 or len(s) >= 400
     prev = [p.strip() for p in prev_lines if p.strip() and not _RULE_LINE.match(p.strip())]
-    if len(s) >= 60 and not looks_ref(s) and prev and len(prev[-1]) >= 60 and not looks_ref(prev[-1]) \
+    if len(s) >= 100 and not looks_ref(s) and prev and len(prev[-1]) >= 100 and not looks_ref(prev[-1]) \
             and not _REF_HEAD.match(prev[-1]):
         return True
     return False
@@ -134,6 +134,8 @@ _SECTION_NAMES = re.compile(
     r"data( and methods?)?|results?|findings|analysis|discussion|conclusions?|limitations|future work|keywords?|"
     r"acknowledge?ments?|appendix|摘\s*要|关键词|引\s*言|绪\s*论|前\s*言|文献综述|研究方法|研究设计|结\s*论|结\s*语|讨\s*论|致\s*谢|附\s*录)"
     r"\b.{0,50}$", re.I)
+_ABSTRACT_HEAD = re.compile(r"^(摘\s*要|内容摘要|内容提要|abstract)\s*([:：]|$|\s)", re.I)
+_KEYWORDS_LINE = re.compile(r"^(关键词|关键字|key\s*words?)\s*[:：]", re.I)
 _RULE_LINE = re.compile(r"^[-—_*=~·\s]{3,}$")
 _BOX = re.compile(r"[\u2500-\u257f\u2580-\u259f]")
 
@@ -152,14 +154,23 @@ def is_section_heading(line: str) -> bool:
     return bool(_SECTION_NUM.match(s) or _SECTION_NAMES.match(s))
 
 
+def _is_head_line(l: str) -> bool:
+    return bool(_KEYWORDS_LINE.match(l.strip()) or is_section_heading(l))
+
+
 def _body_lines(text: str) -> str:
-    """去掉标题行，只看正文（判断文体时用）。"""
+    """去掉标题行、章节标题、关键词行，只看正文（判断文体时用）。"""
     lines = [l for l in text.splitlines() if l.strip()]
-    body = [l for l in lines if not is_title(l)]
-    return "\n".join(body) if body else text
+    core = [l for l in lines if not _is_head_line(l)]
+    if not core:
+        return text
+    body = [l for l in core if not is_title(l)]
+    return "\n".join(body) if body else "\n".join(core)
 
 
 def is_poetry(text: str) -> bool:
+    if all(_is_head_line(l) for l in text.splitlines() if l.strip()):
+        return False                                  # 只有"关键词：……""一、引言"这类行，不是诗
     t = _body_lines(text)
     clauses = [len(_CJK.findall(c)) for c in _CLAUSE_SPLIT.split(t) if _CJK.search(c)]
     if len(clauses) < 4:
@@ -245,6 +256,12 @@ def segment_text(text: str, exclude_references: bool = True, flag_quotations: bo
     pos = 0
     block = 0
     pending_break = False
+    # 论文题目：下一行就是"摘要 / Abstract"的短行（中文长题目没有书名号、超过 16 字也能认出来）
+    lines_all = [l.strip() for l in text.splitlines()]
+    nonempty = [l for l in lines_all if l]
+    paper_titles = {a for a, b in zip(nonempty, nonempty[1:])
+                    if _ABSTRACT_HEAD.match(b) and 4 <= len(a) <= 80 and not is_section_heading(a)
+                    and not re.search(r"[。！？!?；;，,]$", a)}
 
     def flush(kind_override=None):
         nonlocal buf
@@ -253,7 +270,8 @@ def segment_text(text: str, exclude_references: bool = True, flag_quotations: bo
             return
         reg = detect_register(buf)
         tgt = target_chars(reg)
-        title = buf.strip().splitlines()[0].strip() if is_title(buf.strip().splitlines()[0]) else ""
+        first = buf.strip().splitlines()[0].strip()
+        title = first if (first in paper_titles or is_title(first)) and not is_section_heading(first) else ""
         if reg == "zh_poetry" or len(buf) <= tgt * 1.5:
             pieces = [buf]
         else:
@@ -309,7 +327,7 @@ def segment_text(text: str, exclude_references: bool = True, flag_quotations: bo
                 pending_break = True
             continue
         section = is_section_heading(stripped)
-        title = is_title(stripped) and not section
+        title = (stripped in paper_titles or is_title(stripped)) and not section
         if buf.strip():
             reg = detect_register(buf)
             if title and not (buf.strip() and is_title(buf.strip().splitlines()[-1])):

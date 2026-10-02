@@ -756,3 +756,25 @@ def test_titles_drawings_and_references_in_mixed_document():
     assert [s.kind for s in segs][0] == "reference" and "Atzori" in segs[0].text and "Checklist" not in segs[0].text
     body = [s for s in segs if s.kind == "body"]
     assert body and body[0].text.startswith("9-Month Staged")
+
+
+def test_chinese_paper_titles_keywords_and_law_references():
+    body1 = "人的大脑究竟能够记住多少东西，这是一个很有意思的问题。现实生活中可以看到，有些人经过长期训练以后能够记住大量数字。" * 3
+    body2 = "中国古典诗歌不仅是一种文学形式，也是传统文人涵养性情的重要途径。本文从意境、含蓄与音律三个方面梳理古典诗歌的审美特质。" * 3
+    text = ("人类记忆与逻辑推理能力的潜力及其限度\n摘要\n" + body1 + "\n关键词： 记忆能力；逻辑推理；工作记忆；认知能力\n一、引言\n" + body1 +
+            "\n二、人的记忆并不是简单的仓库\n" + body1 + "\n参考文献\nOberauer, K. (2016). What limits working memory capacity? "
+            "Psychological Bulletin, 142(7), 758–799.\n\n论中国古典诗歌的审美特质与人格修养\n摘要：" + body2 + "\n二、古典诗歌的审美特质\n" + body2 +
+            "\nReferences\nBidding Law of the People's Republic of China.\n"
+            "Regulations for the Implementation of the Bidding Law of the People's Republic of China (State Council, 2011).\n"
+            "Government Procurement Law of the People's Republic of China.\n"
+            "Note: Please add the latest academic literature and case data from your own field before submission, and verify all legal citations.\n")
+    segs = segment_text(text)
+    works = {}
+    for s in segs:
+        works.setdefault(s.block, []).append(s)
+    titles = [next((s.title for s in v if s.title), "") for v in works.values()]
+    assert titles[0] == "人类记忆与逻辑推理能力的潜力及其限度"
+    assert "论中国古典诗歌的审美特质与人格修养" in titles
+    assert not any(s.register == "zh_poetry" for s in segs)          # "关键词：……；……" 不是诗
+    assert not any(s.title.startswith("二、") for s in segs)           # 章节标题不当作品名
+    assert all(s.kind == "reference" for s in segs if "Government Procurement" in s.text)
