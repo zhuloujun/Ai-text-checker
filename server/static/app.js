@@ -306,6 +306,10 @@ function workLevel(w){
   if(!w.counted) return 'none';
   return w.ai_rate >= 0.5 ? 'high' : w.ai_rate > 0 ? 'light' : 'low';
 }
+const WORKS_NOTE = 'AI 率 = 判为疑似 AI 的字数占本篇计入字数的比例（含“整篇判断”计入的段落）；' +
+  '平均 AI 概率 = 各段单独打分的平均值。两者口径不同：AI 文章常有个别段落单看分数不高，按整篇判断仍计入 AI 率，' +
+  '所以会出现“AI 率 100%、平均概率只有 40% 多”的情况。段落颜色按是否计入 AI 率显示，数字是该段单独的分数。';
+
 function renderWorks(works){
   const box = $('worksBox');
   if(!works || works.length < 2){ box.hidden = true; box.innerHTML = ''; return; }
@@ -316,7 +320,8 @@ function renderWorks(works){
       <td>${w.registers.map(r=>REG_NAME[r]||r).join('、')}</td><td>${w.chars}</td>
       <td>${w.ai_rate==null ? '—' : pct(w.ai_rate)}</td>
       <td>${w.mean_prob==null ? '—' : pct(w.mean_prob) + (w.counted ? '' : '（参考）')}</td>
-      <td>${escapeHtml(w.verdict)}</td></tr>`).join('') + '</tbody></table>';
+      <td>${escapeHtml(w.verdict)}</td></tr>`).join('') + '</tbody></table>' +
+    `<p class="works-note">${WORKS_NOTE}</p>`;
 }
 
 function renderResult(res){
@@ -373,7 +378,9 @@ function renderResult(res){
       : seg.kind === 'reference_only' ? `<span class="para-tag">仅供参考 · 不计入${seg.ref_prob!=null ? ' · 参考值 '+pct(seg.ref_prob) : ''}</span>`
       : (seg.notes && seg.notes.length) ? `<span class="para-tag">${escapeHtml(seg.notes.join('；'))}</span>` : '';
     div.innerHTML = `
-      <div class="para-badge" ${seg.prob==null && seg.ref_prob!=null ? 'title="参考值：该段不计入 AI 率" style="opacity:.55;border-style:dashed"' : ''}>${seg.prob!=null ? Math.round(seg.prob*100) : seg.ref_prob!=null ? Math.round(seg.ref_prob*100) : '—'}</div>
+      <div class="para-badge" ${seg.prob==null && seg.ref_prob!=null ? 'title="参考值：该段不计入 AI 率" style="opacity:.55;border-style:dashed"'
+        : seg.by_work ? 'title="单段分数未过阈值，按整篇判断计入 AI 率（颜色表示计入）"'
+        : (seg.near_threshold && seg.prob!=null && seg.prob >= seg.threshold) ? 'title="单段分数过了阈值，但按整篇判断未计入 AI 率（颜色表示未计入）"' : ''}>${seg.prob!=null ? Math.round(seg.prob*100) : seg.ref_prob!=null ? Math.round(seg.ref_prob*100) : '—'}${seg.by_work ? '<small style="display:block;font-size:10px;line-height:1">整篇</small>' : (seg.near_threshold && seg.prob!=null && seg.prob >= seg.threshold) ? '<small style="display:block;font-size:10px;line-height:1">未计入</small>' : ''}</div>
       <div class="para-body">
         <div class="para-text">${escapeHtml(preview)}</div>
         <div class="para-tags">
@@ -482,6 +489,7 @@ exportBtn.addEventListener('click', ()=>{
     works.forEach(w=>{
       out += `${w.title} | ${w.registers.map(r=>REG_NAME[r]||r).join('、')} | ${w.chars} 字 | AI 率 ${w.ai_rate==null ? '—' : pct(w.ai_rate)} | 平均 AI 概率 ${w.mean_prob==null ? '—' : pct(w.mean_prob)} | ${w.verdict}\n`;
     });
+    out += `说明：${WORKS_NOTE}\n`;
   }
   out += `\n${'='.repeat(60)}\n分段结果\n${'='.repeat(60)}\n`;
   lastResult.segments.forEach(seg=>{

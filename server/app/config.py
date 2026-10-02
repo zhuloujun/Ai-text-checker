@@ -73,6 +73,13 @@ SHORT_WORDS_EN = _int("SHORT_WORDS_EN", 150)
 # 中文段落困惑度（Qwen2.5-0.5B）低于此值：模型几乎逐字复现，视为公开名篇原文（《背影》实测 1.3–2.4），不计入 AI 率。
 # 依据：评估集中约 1300 段中文 AI 文本（GLM / GPT-4o / Qwen / DeepSeek / 文心 / Kimi）困惑度最低 3.57。
 FAMOUS_PPL_ZH = float(os.getenv("FAMOUS_PPL_ZH", "3.0") or 3.0)
+# 名篇特征（整篇）：某段困惑度 < FAMOUS_WORK_PPL 且困惑度波动 > FAMOUS_WORK_BURST（模型对部分句子逐字背过、其余正常）。
+# 评估集约 1460 段中文 AI 文本中只有 1 段同时满足；《草原》《背影》等名篇满足。
+FAMOUS_WORK_PPL = float(os.getenv("FAMOUS_WORK_PPL", "6.0") or 6.0)
+FAMOUS_WORK_BURST = float(os.getenv("FAMOUS_WORK_BURST", "0.95") or 0.95)
+# 孤立段落：整篇像人写（中文分类器加权中位数 < 0.5）时，过线字数不足本篇此比例、且未达"高度疑似"的段落不计入
+# （参照 Turnitin：AI 占比低于 20% 时不给具体数字，因为这一区间误判明显增多）
+ISOLATED_MAX_SHARE = float(os.getenv("ISOLATED_MAX_SHARE", "0.25") or 0.25)
 MEMORIZED_PPL = float(os.getenv("MEMORIZED_PPL", "3.5") or 3.5)
 # 管理页校准时，用户样本与内置公开数据合并，用户样本合计所占的权重比例
 USER_SAMPLE_SHARE = float(os.getenv("USER_SAMPLE_SHARE", "0.3") or 0.3)

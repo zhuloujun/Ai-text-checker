@@ -842,5 +842,32 @@ def test_chinese_human_like_work_demotes_lm_only_hits(client, monkeypatch):
     zh = [s for s in res["segments"] if s["register"] == "zh" and s["kind"] == "body"]
     assert len(zh) >= 3, zh
     hit = [s for s in zh if s["prob"] >= s["threshold"]]
-    assert hit and all(s["label"].startswith("接近阈值（整篇像人写") for s in hit)
+    assert hit and all(s["label"].startswith("接近阈值") for s in hit)
     assert res["summary"]["ai_rate"] == 0
+
+
+def test_chinese_famous_work_guard(client, monkeypatch):
+    """有"名篇特征"（某段困惑度很低、波动很大）且整篇不像 AI 的中文作品：过线段落标"接近阈值（疑似名篇，未计入）"。"""
+    from app import config
+    import app.main as m
+    monkeypatch.setattr(config, "FAMOUS_PPL_ZH", 0.0)
+    monkeypatch.setattr(config, "FAMOUS_WORK_PPL", 1e9)
+    monkeypatch.setattr(config, "FAMOUS_WORK_BURST", -1.0)
+    monkeypatch.setattr(config, "ZH_DOC_THRESHOLD", 0.95)
+    cal = dict(m.engine.cal)
+    profs = dict(cal.get("profiles") or {})
+    for k in ("zh", "zh_short"):
+        profs[k] = {"threshold": 0.0, "lr": None, "calibrated": True}
+    monkeypatch.setattr(m.engine, "cal", dict(cal, profiles=profs))
+    monkeypatch.setattr(m.engine, "classify", lambda texts, regs: [0.9 if r == "zh" else None for r in regs])
+    para = "我们访问的是陈巴尔虎旗的牧业公社。汽车走了一百五十华里，才到达目的地。一百五十里全是草原。再走一百五十里，也还是草原。" * 3
+    doc = "《草原》\n" + "\n\n".join([para] * 5)
+    h = {"Authorization": "Bearer " + issue(client)}
+    res = client.post("/v1/detect", json={"text": doc, "wait": True}, headers=h).json()["result"]
+    zh = [s for s in res["segments"] if s["register"] == "zh" and s["kind"] == "body"]
+    labels = [s["label"] for s in zh]
+    assert len(zh) >= 3 and "接近阈值（疑似名篇，未计入）" in labels and set(labels) <= {"", "接近阈值（疑似名篇，未计入）"}, labels
+    assert res["summary"]["ai_rate"] == 0
+    monkeypatch.setattr(config, "ZH_DOC_THRESHOLD", 0.5)          # 整篇像 AI（中位数 0.9 ≥ 0.5）时不保护
+    res = client.post("/v1/detect", json={"text": doc + "。", "wait": True}, headers=h).json()["result"]
+    assert res["summary"]["ai_rate"] > 0

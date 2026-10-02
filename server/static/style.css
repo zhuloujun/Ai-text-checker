@@ -655,6 +655,7 @@ body{
 .works-table{width:100%;border-collapse:collapse;font-size:13px}
 .works-table th,.works-table td{padding:6px 8px;border-bottom:1px solid rgba(128,128,128,.25);text-align:left;vertical-align:top}
 .works-table th{font-weight:600;opacity:.8}
+.works-note{font-size:12px;opacity:.75;margin:8px 0 0;line-height:1.6}
 .works-table tr.work-high td:last-child{color:#c0392b;font-weight:600}
 .works-table tr.work-light td:last-child{color:#d68910;font-weight:600}
 .works-table tr.work-low td:last-child{color:#1e8449}
