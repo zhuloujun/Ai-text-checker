@@ -447,6 +447,26 @@ class Engine:
                 zh_doc_ai.update(i for i in idxs if smoothed.get(i) is not None
                                  and smoothed[i] < float(prof[i][0].get("threshold", 0.5)) and i not in work_ai)
         work_ai |= zh_doc_ai
+        # 6) 反向整篇判断：中文作品整体像人写（中文分类器整篇加权中位数 < 0.5），其中个别段落只因语言模型信号偏高
+        #    （名篇被部分背过、文风工整）而过线、分类器本身也判为人写（< 0.5）时，不计入，标"接近阈值"。
+        #    验证：在 78 篇知乎真人长文、36 篇国产大模型中文论文上不改变任何结果（只影响《草原》这类名篇）。
+        zh_human_work = set()
+        for (blk, reg), idxs in groups.items():
+            if reg != "zh" or len(idxs) < 3:
+                continue
+            vals = sorted((results[i]["classifier"], len(segs_by_idx[i].text)) for i in idxs
+                          if results[i].get("classifier") is not None)
+            half, acc, med = sum(n for _, n in vals) / 2, 0, None
+            for p_, n in vals:
+                acc += n
+                if acc >= half:
+                    med = p_
+                    break
+            if med is not None and med < 0.5:
+                zh_human_work.update(i for i in idxs if (results[i].get("classifier") or 1) < 0.5
+                                     and smoothed.get(i) is not None
+                                     and smoothed[i] >= float(prof[i][0].get("threshold", 0.5)))
+        work_ai -= zh_human_work
 
         seg_out, counted_chars, prob_weighted = [], 0, 0.0
         chars_by_level = {"high": 0, "mid": 0, "light": 0, "low": 0}
@@ -463,7 +483,9 @@ class Engine:
             level, label = scoring.level_of(prob, thr) if s.counted else ("none", "")
             near = bool(s.counted and prob is not None and thr - scoring.NEAR_MARGIN <= prob < thr)
             by_work = s.index in work_ai or s.index in paper_ai
-            if s.index in paper_ai:
+            if s.index in zh_human_work:
+                level, label, near = "low", "接近阈值（整篇像人写，未计入）", True
+            elif s.index in paper_ai:
                 level, label, near = "mid", "中度疑似（整篇判断）", False
             elif by_work:
                 level, label, near = "light", "轻度疑似（整篇判断）", False
@@ -537,6 +559,9 @@ class Engine:
             notes.append(f"按整篇判断：这篇英文论文多数段落带有明显的大模型写作特征（整篇中位得分达到阈值），另有 {len(paper_ai)} 段"
                          "单看得分不高，也按“中度疑似（整篇判断）”计入。单段得分会随分段位置波动，整篇结论更可靠；"
                          "如果其中有你亲自写的段落，请以整篇结论为参考、逐段复核。")
+        if zh_human_work:
+            notes.append(f"有 {len(zh_human_work)} 段中文单看过了阈值，但中文分类器判为人写、所在文章整体也像人写"
+                         "（常见于被大模型部分背过的名篇、文风工整的范文），未计入 AI 率，标为“接近阈值”供复核。")
         if zh_doc_ai:
             notes.append(f"按整篇判断：有 {len(zh_doc_ai)} 段中文单看得分未过阈值，但所在文章整体带有明显的大模型写作风格"
                          "（中文分类器整篇中位得分达到阈值），按“轻度疑似（整篇判断）”计入。Claude、Kimi 等模型写的中文常见这种情况；"

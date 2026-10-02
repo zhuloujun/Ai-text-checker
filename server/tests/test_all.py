@@ -822,3 +822,25 @@ def test_famous_chinese_text_with_tiny_perplexity_not_counted(client, monkeypatc
     res = client.post("/v1/detect", json={"text": "《背影》\n" + para + "\n\n" + para, "wait": True}, headers=h).json()["result"]
     zh = [s for s in res["segments"] if s["register"] == "zh"]
     assert zh and all(s["kind"] == "quotation" for s in zh)
+
+
+def test_chinese_human_like_work_demotes_lm_only_hits(client, monkeypatch):
+    """中文作品整体像人写（分类器中位数 < 0.5）时，只靠语言模型信号过线的段落不计入。"""
+    from app import config
+    import app.main as m
+    monkeypatch.setattr(config, "FAMOUS_PPL_ZH", 0.0)
+    cal = dict(m.engine.cal)
+    profs = dict(cal.get("profiles") or {})
+    for k in ("zh", "zh_short"):
+        profs[k] = {"threshold": 0.0, "lr": None, "calibrated": True}
+    monkeypatch.setattr(m.engine, "cal", dict(cal, profiles=profs))
+    monkeypatch.setattr(m.engine, "classify", lambda texts, regs: [0.1 if r == "zh" else None for r in regs])
+    para = "我们访问的是陈巴尔虎旗的牧业公社。汽车走了一百五十华里，才到达目的地。一百五十里全是草原。再走一百五十里，也还是草原。" * 3
+    doc = "《草原》\n" + "\n\n".join([para] * 5)
+    h = {"Authorization": "Bearer " + issue(client)}
+    res = client.post("/v1/detect", json={"text": doc, "wait": True}, headers=h).json()["result"]
+    zh = [s for s in res["segments"] if s["register"] == "zh" and s["kind"] == "body"]
+    assert len(zh) >= 3, zh
+    hit = [s for s in zh if s["prob"] >= s["threshold"]]
+    assert hit and all(s["label"].startswith("接近阈值（整篇像人写") for s in hit)
+    assert res["summary"]["ai_rate"] == 0
