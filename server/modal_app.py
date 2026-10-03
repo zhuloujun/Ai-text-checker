@@ -32,6 +32,10 @@ HAS_EN2 = (EN2_LOCAL / "config.json").exists()
 ZH2_LOCAL = Path(__file__).resolve().parent / "chinese-classifier"
 ZH2_DIR = "/models/chinese-classifier"
 HAS_ZH2 = (ZH2_LOCAL / "config.json").exists()
+# 英文整篇分类器（config.EN3_CLASSIFIER_ID）：部署工作流下载到 server/english-doc-classifier
+EN3_LOCAL = Path(__file__).resolve().parent / "english-doc-classifier"
+EN3_DIR = "/models/english-doc-classifier"
+HAS_EN3 = (EN3_LOCAL / "config.json").exists()
 CPU_CORES = 8
 
 image = (
@@ -50,6 +54,7 @@ image = (
         "CLASSICAL_CLASSIFIER_MODEL": CLASSICAL_DIR if HAS_CLASSICAL else "",
         "EN2_CLASSIFIER_MODEL": EN2_DIR if HAS_EN2 else "",
         "ZH2_CLASSIFIER_MODEL": ZH2_DIR if HAS_ZH2 else "",
+        "EN3_CLASSIFIER_MODEL": EN3_DIR if HAS_EN3 else "",
         "USER_CALIBRATION_FILE": "/data/user_calibration.json",
         "USER_LABELS_FILE": "/data/user_labels.json",
         "CALIBRATION_VOLUME": "ai-text-checker-data",
@@ -68,6 +73,8 @@ if HAS_EN2:
     image = image.add_local_dir(str(EN2_LOCAL), EN2_DIR)
 if HAS_ZH2:
     image = image.add_local_dir(str(ZH2_LOCAL), ZH2_DIR)
+if HAS_EN3:
+    image = image.add_local_dir(str(EN3_LOCAL), EN3_DIR)
 
 app = modal.App("ai-text-checker")
 # 持久卷：保存管理页“用我的标注校准”的结果，服务重启 / 重新部署后仍然有效

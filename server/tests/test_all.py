@@ -14,7 +14,7 @@ if not MD:
 os.environ.update({
     "OBSERVER_MODEL": f"{MD}/observer", "PERFORMER_MODEL": f"{MD}/performer", "CLASSIFIER_MODEL": f"{MD}/cls",
     "EN_CLASSIFIER_MODEL": f"{MD}/desklib_en", "POETRY_CLASSIFIER_MODEL": f"{MD}/desklib_en/../cls",
-    "EN2_CLASSIFIER_MODEL": f"{MD}/cls", "ZH2_CLASSIFIER_MODEL": f"{MD}/cls",
+    "EN2_CLASSIFIER_MODEL": f"{MD}/cls", "ZH2_CLASSIFIER_MODEL": f"{MD}/cls", "EN3_CLASSIFIER_MODEL": f"{MD}/cls",
     "ADMIN_TOKEN": "test-admin-pw", "LM_MAX_TOKENS": "128", "CALIBRATION_FILE": "/nonexistent/cal.json",
     "MAX_TEXT_CHARS": "300000",
     "USER_CALIBRATION_FILE": f"/tmp/test_user_calibration_{os.getpid()}.json",
@@ -333,7 +333,7 @@ def test_detect_sync(client):
     assert j["status"] == "done"
     s = j["result"]["summary"]
     assert s["methods"] == {"fastdetect": True, "binoculars": True, "classifier": True, "classifier_en": True,
-                            "classifier_en2": True, "classifier_zh2": True, "classifier_poetry": True,
+                            "classifier_en2": True, "classifier_zh2": True, "classifier_en3": True, "classifier_poetry": True,
                             "classifier_classical": bool(os.environ.get("CLASSICAL_CLASSIFIER_MODEL"))}
     assert 0 <= s["ai_rate"] <= 1 and s["counted_chars"] > 0
     seg = j["result"]["segments"][0]
@@ -916,4 +916,27 @@ def test_chinese_second_classifier_whole_document(client, monkeypatch):
     assert all(s["label"] == "中度疑似（整篇判断）" for s in zh), [s["label"] for s in zh]
     monkeypatch.setattr(config, "ZH2_DOC_THRESHOLD", 1.01)
     res = client.post("/v1/detect", json={"text": doc + "。", "wait": True}, headers=h).json()["result"]
+    assert not any(s["label"] == "中度疑似（整篇判断）" for s in res["segments"])
+
+
+
+def test_english_whole_document_classifier(client, monkeypatch):
+    """非论文英文作品：英文整篇分类器整篇中位数达到阈值时，未过阈值的段落标"中度疑似（整篇判断）"。"""
+    from app import config
+    import app.main as m
+    cal = dict(m.engine.cal)
+    profs = dict(cal.get("profiles") or {})
+    profs["en"] = {"threshold": 0.999, "lr": None, "calibrated": True}
+    monkeypatch.setattr(m.engine, "cal", dict(cal, profiles=profs))
+    para = ("Let me speak of the country, for I have lived in it, and it has taught me more than any book. "
+            "The city talks; the country sings, and the larks go up like small prayers into the morning sky. ") * 6
+    doc = "Of Fields and Seasons\n" + para + "\n\n" + para.replace("country", "valley") + "\n\n" + para.replace("city", "town")
+    h = {"Authorization": "Bearer " + issue(client)}
+    monkeypatch.setattr(config, "EN3_DOC_THRESHOLD", 0.0)
+    res = client.post("/v1/detect", json={"text": doc, "wait": True}, headers=h).json()["result"]
+    en = [s for s in res["segments"] if s["register"] == "en" and s["kind"] == "body"]
+    assert len(en) >= 2 and all("classifier_en3" in s["raw"] for s in en)
+    assert all(s["label"] == "中度疑似（整篇判断）" for s in en), [s["label"] for s in en]
+    monkeypatch.setattr(config, "EN3_DOC_THRESHOLD", 1.01)
+    res = client.post("/v1/detect", json={"text": doc + ".", "wait": True}, headers=h).json()["result"]
     assert not any(s["label"] == "中度疑似（整篇判断）" for s in res["segments"])

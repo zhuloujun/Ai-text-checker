@@ -39,6 +39,11 @@ EN2_CLASSIFIER_ID = os.getenv("EN2_CLASSIFIER_ID", "english-classifier-v3")
 # 中文第二分类器（tools/train_chinese.py 训练）：专门识别新一代国产大模型（DeepSeek / Kimi / 文心 / 千问 / 豆包）的中文，
 # 尤其是散文、游记、回忆类文学文字。只用于"整篇判断"（不参与逐段校准）。
 ZH2_CLASSIFIER_MODEL = os.getenv("ZH2_CLASSIFIER_MODEL", "")
+# 英文整篇分类器（另一版英文第二分类器，加入了故事、散文、清单等非论文体裁）：只用于非论文英文作品的"整篇判断"，
+# 不参与逐段校准（v5 / v6 换进逐段校准后真人误判升高，已否决）。
+EN3_CLASSIFIER_MODEL = os.getenv("EN3_CLASSIFIER_MODEL", "")
+EN3_CLASSIFIER_ID = os.getenv("EN3_CLASSIFIER_ID", "english-classifier-v7")
+EN3_DOC_THRESHOLD = float(os.getenv("EN3_DOC_THRESHOLD", "0.9") or 0.9)
 ZH2_CLASSIFIER_ID = os.getenv("ZH2_CLASSIFIER_ID", "chinese-classifier-v2")
 # 诗词专用分类器（tools/train_poetry.py 在 ChangAn 上微调，发布在本仓库 Release）。填本地目录；留空则诗词用通用中文分类器。
 POETRY_CLASSIFIER_MODEL = os.getenv("POETRY_CLASSIFIER_MODEL", "")

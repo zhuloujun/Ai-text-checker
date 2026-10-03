@@ -97,6 +97,18 @@ jobs:
           else
             echo "::warning title=中文第二分类器::没有找到 Release $TAG，本次不部署它"
           fi
+      - name: 取出英文整篇分类器（版本见 server/app/config.py 的 EN3_CLASSIFIER_ID）
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=$(grep -oE 'EN3_CLASSIFIER_ID", "english-classifier-[A-Za-z0-9.-]+' server/app/config.py | grep -oE 'english-classifier-[A-Za-z0-9.-]+' || true)
+          if [ -n "$TAG" ] && gh release download "$TAG" -p english-classifier.tar.gz -D /tmp/en3 -R "${{ github.repository }}"; then
+            mkdir -p /tmp/en3x && tar xzf /tmp/en3/english-classifier.tar.gz -C /tmp/en3x
+            mv /tmp/en3x/english-classifier server/english-doc-classifier
+            ls server/english-doc-classifier
+          else
+            echo "::warning title=英文整篇分类器::没有找到 Release $TAG，本次不部署它"
+          fi
       - name: 部署
         working-directory: server
         env:
