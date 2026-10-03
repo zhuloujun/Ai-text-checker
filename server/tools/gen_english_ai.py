@@ -41,7 +41,13 @@ PROVIDERS = {
                                   for m in ("ernie-5.0", "ernie-x1.1-preview", "ernie-4.5-turbo-32k", "ernie-x1-turbo-32k", "ernie-4.5-turbo-128k",
                                             "ernie-4.0-turbo-8k", "ernie-3.5-8k", "ernie-speed-128k",
                                             "ernie-speed-8k", "ernie-lite-8k")]),
-    "qwen": ("DASHSCOPE_API_KEY", [("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", "qwen-plus")]),
+    "qwen": ("DASHSCOPE_API_KEY", [("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", m)
+                                   for m in ("qwen-plus", "qwen-max", "qwen3-max", "qwen-turbo", "qwen-plus-latest")]),
+    # 豆包（火山方舟）：模型名带日期版本，依次尝试；也可以在 Secrets 里设 DOUBAO_MODEL（如推理接入点 ep-xxxx）
+    "doubao": ("DOUBAO_API_KEY", [("https://ark.cn-beijing.volces.com/api/v3/chat/completions", m)
+                                  for m in (os.getenv("DOUBAO_MODEL", "").strip() or "doubao-seed-1-6-250615",
+                                            "doubao-seed-1-6-flash-250615", "doubao-1-5-pro-32k-250115",
+                                            "doubao-1-5-lite-32k-250115", "doubao-pro-32k-241215")]),
 }
 # 学科尽量宽：经济金融、农业与生物、医学、工程、计算机、社会科学、物理数学
 CATEGORIES = ["q-fin.GN", "q-fin.ST", "econ.GN", "q-bio.PE", "q-bio.QM", "physics.soc-ph", "cs.CY", "cs.LG",
@@ -394,13 +400,16 @@ GENRE_STYLE = [
     "用英文写一份{t}的实用指南，分步骤列出来。",
     "帮我用英文写一封关于{t}的正式邮件。",
     "Write a short English essay about {t}.",
+    "用英文写一篇田园风格的抒情散文，题目是{t}，模仿古典英国散文家的笔调。",
+    "帮我用英文写一篇文学赏析文章，评论{t}，要有标题、摘要和参考文献。",
 ]
 GENRE_TOPICS = ["小狐狸与月亮", "勇敢的小兔子", "会说话的大树", "星星和小女孩", "迷路的小熊", "海边的灯塔", "小龙的第一次飞行",
                 "风筝和风", "老爷爷的花园", "冬天里的小麻雀", "培养孩子自主学习习惯", "家庭垃圾分类", "提高睡眠质量",
                 "中学生时间管理", "老人智能手机使用", "家庭理财", "养成阅读习惯", "减少孩子看手机的时间", "健康饮食",
                 "坚持的意义", "友谊的价值", "保护环境", "科技改变生活", "传统文化的传承", "失败是成功之母", "感恩父母",
                 "读书的意义", "青春与梦想", "团队合作", "诚信", "乡村的变化", "家乡的春节", "一次难忘的旅行",
-                "小王子", "老人与海", "西游记", "红楼梦", "傲慢与偏见", "活着", "海底两万里", "夏洛的网"]
+                "小王子", "老人与海", "西游记", "红楼梦", "傲慢与偏见", "活着", "海底两万里", "夏洛的网",
+                "田野与四季", "乡间的清晨", "老人和他的狗", "夏威夷的海", "唐吉诃德", "三个火枪手", "故乡的河", "秋天的果园"]
 
 
 def genre_topics(rnd):
