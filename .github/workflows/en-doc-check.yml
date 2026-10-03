@@ -1,0 +1,41 @@
+# 英文非论文整篇判断的阈值验证：用指定 Release 的英文分类器给真人英文长文和用户文档打分（只能手动运行）
+name: 英文整篇判断验证
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "英文分类器 Release 名"
+        default: "english-classifier-v7"
+      n:
+        description: "每个真人来源取多少篇"
+        default: "150"
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cpu && pip install "transformers>=4.45,<5" sentencepiece safetensors
+      - name: 下载分类器并打分
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "${{ github.event.inputs.tag }}" -p english-classifier.tar.gz -D /tmp -R "${{ github.repository }}"
+          mkdir -p /tmp/x && tar xzf /tmp/english-classifier.tar.gz -C /tmp/x
+          cd server && python -u tools/en_doc_check.py --model /tmp/x/english-classifier --n "${{ github.event.inputs.n }}"
+      - name: 提交
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server/tools/data/en_doc_check.json || true
+          git commit -m "en doc check results [skip ci]" || exit 0
+          git pull --rebase origin main && git push origin HEAD:main
