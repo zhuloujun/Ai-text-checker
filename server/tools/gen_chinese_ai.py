@@ -170,6 +170,8 @@ def main():
         collect_human()
     t0, lock, ths = time.time(), threading.Lock(), []
     for name, (env, eps) in g.PROVIDERS.items():
+        if os.getenv('ONLY_PROVIDERS') and name not in os.getenv('ONLY_PROVIDERS').split(','):
+            continue
         key = os.getenv(env, "").strip()
         if not key:
             print(f"::notice title=未设置 {env}::跳过 {name}", flush=True)

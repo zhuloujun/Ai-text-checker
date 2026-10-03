@@ -528,6 +528,8 @@ def main():
     lock = threading.Lock()
     threads = []
     for name, (env, endpoints) in PROVIDERS.items():
+        if os.getenv('ONLY_PROVIDERS') and name not in os.getenv('ONLY_PROVIDERS').split(','):
+            continue
         key = os.getenv(env, "").strip()
         if not key:
             print(f"未设置 {env}，跳过 {name}", flush=True)

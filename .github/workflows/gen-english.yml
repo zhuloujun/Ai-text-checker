@@ -6,6 +6,9 @@ name: 生成英文 AI 训练数据
 on:
   workflow_dispatch:
     inputs:
+      providers:
+        description: "只用这几家（逗号分隔，如 doubao,qwen；留空 = 全部）"
+        default: ""
       n_titles:
         description: "每家模型生成多少篇"
         default: "200"
@@ -33,6 +36,7 @@ jobs:
           DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY || secrets.QWEN_API_KEY }}
           DOUBAO_API_KEY: ${{ secrets.DOUBAO_API_KEY || secrets.ARK_API_KEY }}
           DOUBAO_MODEL: ${{ secrets.DOUBAO_MODEL }}
+          ONLY_PROVIDERS: ${{ github.event.inputs.providers }}
         run: |
           for v in DEEPSEEK_API_KEY KIMI_API_KEY WENXIN_API_KEY DASHSCOPE_API_KEY DOUBAO_API_KEY; do
             if [ -n "${!v}" ]; then echo "$v：已设置"; else echo "$v：未设置"; fi

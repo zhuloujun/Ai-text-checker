@@ -5,6 +5,9 @@ name: 生成中文 AI 训练数据
 on:
   workflow_dispatch:
     inputs:
+      providers:
+        description: "只用这几家（逗号分隔，如 doubao,qwen；留空 = 全部）"
+        default: ""
       n_titles:
         description: "每家模型生成多少篇"
         default: "120"
@@ -13,7 +16,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: gen-chinese
+  group: gen-chinese-${{ github.event.inputs.providers }}
   cancel-in-progress: false
 
 jobs:
@@ -30,11 +33,12 @@ jobs:
           DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY || secrets.QWEN_API_KEY }}
           DOUBAO_API_KEY: ${{ secrets.DOUBAO_API_KEY || secrets.ARK_API_KEY }}
           DOUBAO_MODEL: ${{ secrets.DOUBAO_MODEL }}
+          ONLY_PROVIDERS: ${{ github.event.inputs.providers }}
         run: |
           for v in DEEPSEEK_API_KEY KIMI_API_KEY WENXIN_API_KEY DASHSCOPE_API_KEY DOUBAO_API_KEY; do
             if [ -n "${!v}" ]; then echo "::notice title=$v::已设置"; else echo "::notice title=$v::未设置"; fi
           done
-          python -u server/tools/gen_chinese_ai.py --n-titles "${{ github.event.inputs.n_titles || '120' }}" --time-budget-min 270
+          python -u server/tools/gen_chinese_ai.py --n-titles "${{ github.event.inputs.n_titles || '120' }}" --time-budget-min 270 ${{ github.event.inputs.providers && '--skip-human' || '' }}
       - name: 提交
         if: always()
         run: |
