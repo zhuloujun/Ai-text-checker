@@ -439,7 +439,11 @@ def working_endpoints(name, key, endpoints, limit=4):
                     and not re.search(r"vision|embedding|flash|lite|thinking-vision|ui", e[1])]
             seed.sort(key=lambda e: e[1], reverse=True)
             seed.sort(key=lambda e: (e[1] != want, "pro" not in e[1]))
-            endpoints = seed + [e for e in endpoints if e not in seed and "doubao" in e[1]]
+            evo = [e for e in endpoints if "evolving" in e[1]]
+            if not evo:
+                base = "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
+                evo = [(base, "doubao-seed-evolving"), (base, "doubao-seed-evolving-latest-version")]
+            endpoints = seed[:4] + evo + [e for e in endpoints if e not in seed and e not in evo and "doubao" in e[1]]
     ok = []
     for url, model in endpoints[:12]:
         try:
