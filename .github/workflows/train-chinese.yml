@@ -1,0 +1,58 @@
+# 训练"中文第二分类器"（新一代国产大模型中文：散文、游记、读后感、论文……），在 Modal GPU 上训练，发布到 Release。
+name: 训练中文检测模型
+
+on:
+  workflow_dispatch:
+    inputs:
+      args:
+        description: "传给 train_chinese.py 的额外参数（可留空）"
+        default: ""
+      tag:
+        description: "发布到哪个 Release"
+        default: "chinese-classifier-v1"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: train-chinese
+  cancel-in-progress: true
+
+env:
+  RELEASE_TAG: ${{ github.event.inputs.tag || 'chinese-classifier-v1' }}
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install "modal==1.5.5"
+      - name: 在 Modal GPU 上训练
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: |
+          ls server/tools/data/gen_zh || { echo "::error::还没有生成中文数据"; exit 1; }
+          modal run server/tools/train_chinese_modal.py --args "${{ github.event.inputs.args }}"
+          mkdir -p /tmp/x && tar xzf chinese-classifier.tar.gz -C /tmp/x
+          python3 - <<'PY'
+          import json
+          r = json.load(open("/tmp/x/chinese-classifier/training_result.json"))
+          print("::notice title=中文第二分类器：逐段（误判率 1%）::" + json.dumps(r["segments_at_1pct"], ensure_ascii=False))
+          print("::notice title=中文第二分类器：逐段（误判率 5%）::" + json.dumps(r["segments_at_5pct"], ensure_ascii=False))
+          print("::notice title=中文第二分类器：整篇::" + json.dumps(r["doc_level"], ensure_ascii=False))
+          print("::notice title=中文第二分类器：用户文档::" + json.dumps(r.get("user_docs"), ensure_ascii=False)[:4000])
+          PY
+          cat /tmp/x/chinese-classifier/training_result.json >> "$GITHUB_STEP_SUMMARY"
+      - name: 发布到 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$RELEASE_TAG" >/dev/null 2>&1 || \
+            gh release create "$RELEASE_TAG" --title "中文 AI 检测模型（新一代国产大模型中文）" \
+              --notes "由 server/tools/train_chinese.py 训练：NLPCC / 知乎 / 网络小说 / 高考现代文等真人中文 vs DeepSeek、Kimi、文心、千问、豆包等生成的中文。"
+          gh release upload "$RELEASE_TAG" chinese-classifier.tar.gz --clobber
