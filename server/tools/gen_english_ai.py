@@ -226,7 +226,9 @@ def discover_models(name, key, endpoints):
     for base in dict.fromkeys(u.rsplit("/chat/completions", 1)[0] for u, _ in endpoints):
         try:
             ids = [m.get("id") for m in _get_json(base + "/models", key).get("data", []) if m.get("id")]
-            print(f"::notice title={name} 可用模型（{base}）::{', '.join(ids[:40]) or '（空）'}", flush=True)
+            shown = sorted((i for i in ids if "seed" in i and not re.search(r"seedance|seedream|seed3d|seedtts", i)), reverse=True) \
+                if name == "doubao" else ids[:40]
+            print(f"::notice title={name} 可用模型（{base}）::{', '.join(shown) or '（空）'}", flush=True)
             chat_ids = [i for i in ids if not re.search(r"embed|vision|tts|audio|image|rerank", i, re.I)]
             chat_ids.sort(key=lambda i: ("code" in i, ("8k" not in i and "turbo" not in i), i))
             extra += [(base + "/chat/completions", i) for i in chat_ids]
@@ -431,9 +433,13 @@ def working_endpoints(name, key, endpoints, limit=4):
     if name in ("kimi", "doubao"):
         endpoints = discover_models(name, key, endpoints)
         if name == "doubao":          # 只保留文字对话模型，最新的排前面
-            endpoints = sorted([e for e in endpoints if re.search(r"doubao|deepseek|kimi", e[1], re.I)
-                                and not re.search(r"seedance|seedream|vision|embedding|audio|tts|asr|1-5-ui", e[1], re.I)],
-                               key=lambda e: (os.getenv("DOUBAO_MODEL", "") != e[1], "pro" not in e[1], e[1]), reverse=False)
+            # 只用豆包自己的 Seed 文字模型（最新的排前面；用户在 DOUBAO_MODEL 指定的排最前）
+            want = os.getenv("DOUBAO_MODEL", "").strip()
+            seed = [e for e in endpoints if re.search(r"doubao-seed-\d", e[1])
+                    and not re.search(r"vision|embedding|flash|lite|thinking-vision|ui", e[1])]
+            seed.sort(key=lambda e: e[1], reverse=True)
+            seed.sort(key=lambda e: (e[1] != want, "pro" not in e[1]))
+            endpoints = seed + [e for e in endpoints if e not in seed and "doubao" in e[1]]
     ok = []
     for url, model in endpoints[:12]:
         try:
