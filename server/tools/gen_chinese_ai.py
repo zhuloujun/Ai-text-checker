@@ -88,11 +88,13 @@ def run(name, key, endpoints, n, t0, budget, lock):
 
 
 # ---------------- 真人长文（ChatGPT 之前）----------------
-HUMAN_SOURCES = [  # (数据集, 配置, 文本字段, 名称, 篇数)
-    ("wangrui6/Zhihu-KOL", None, "RESPONSE", "zhihu", 1200),
-    ("wdndev/webnovel-chinese", None, "text", "webnovel", 600),
-    ("CASIA-LM/ChineseWebText", None, "text", "webtext", 600),
-    ("AsakusaRinne/gaokao_bench", "2010-2022_Chinese_Modern_Lit", "question", "gaokao", 200),
+HUMAN_SOURCES = [  # (数据集, 配置, 文本字段（None = 自动取最长的文字字段）, 名称, 篇数, 最少汉字数)
+    ("wangrui6/Zhihu-KOL", None, "RESPONSE", "zhihu", 1200, 600),
+    ("wdndev/webnovel-chinese", None, "text", "webnovel", 600, 600),
+    # 文学类真人文字（散文、记叙文、小说片段）——缺了它，模型会把名家散文判成 AI
+    ("AsakusaRinne/gaokao_bench", "2010-2022_Chinese_Modern_Lit", None, "gaokao", 300, 400),
+    ("clue/clue", "c3", "context", "c3", 1500, 250),
+    ("Hello-SimpleAI/HC3-Chinese", "all", "human_answers", "hc3", 800, 300),
 ]
 
 
@@ -101,7 +103,17 @@ def _get(url):
         return json.loads(r.read())
 
 
-def hf_rows(dataset, config, field, want, rnd):
+def _text_of(v):
+    if isinstance(v, str):
+        return v
+    if isinstance(v, list):
+        return "\n".join(_text_of(x) for x in v if x)
+    if isinstance(v, dict):
+        return "\n".join(_text_of(x) for x in v.values() if isinstance(x, (str, list)))
+    return ""
+
+
+def hf_rows(dataset, config, field, want, rnd, min_cjk=600):
     q = urllib.parse.quote(dataset, safe="")
     sp = _get(f"https://datasets-server.huggingface.co/splits?dataset={q}")["splits"]
     if config:
@@ -112,10 +124,10 @@ def hf_rows(dataset, config, field, want, rnd):
         n_rows = next((s["num_rows"] for s in size if s["config"] == cfg and s["split"] == split), 20000)
     except Exception:  # noqa: BLE001
         n_rows = 20000
-    out, seen = [], set()
-    offsets = list(range(0, max(100, n_rows - 100), 100))
+    out, seen, probed = [], set(), False
+    offsets = list(range(0, max(1, n_rows), 100))
     rnd.shuffle(offsets)
-    for off in offsets[:150]:
+    for off in offsets[:200]:
         try:
             rows = _get(f"https://datasets-server.huggingface.co/rows?dataset={q}&config={urllib.parse.quote(cfg)}"
                         f"&split={urllib.parse.quote(split)}&offset={off}&length=100")["rows"]
@@ -124,14 +136,20 @@ def hf_rows(dataset, config, field, want, rnd):
             time.sleep(2)
             continue
         for row in rows:
-            t = row["row"].get(field) or ""
-            if not isinstance(t, str):
-                continue
+            r = row["row"]
+            if not probed:
+                probed = True
+                print(f"::notice title=真人中文数据字段 {dataset}::{cfg}/{split} 共 {n_rows} 行；字段："
+                      + ", ".join(f"{k}({len(_text_of(v))})" for k, v in r.items()), flush=True)
+            if field:
+                t = _text_of(r.get(field))
+            else:
+                t = max((_text_of(v) for v in r.values()), key=len, default="")
             t = t.strip()
-            if field == "question":            # 高考阅读题：取题干前的文章部分
-                t = re.split(r"\n\s*\d+[.．、]|（\s*\d+\s*分\s*）", t)[0]
-            cjk = len(re.findall(r"[一-鿿]", t))
-            if cjk >= 600 and cjk >= 0.6 * len(t) and t[:80] not in seen:
+            if dataset.endswith("gaokao_bench"):     # 高考阅读题：只取文章，去掉后面的题目
+                t = re.split(r"\n\s*\d+\s*[.．、]\s*\S|（\s*\d+\s*分\s*）|[（(]\s*1\s*[）)]", t)[0]
+            cjk = len(re.findall(r"[\u4e00-\u9fff]", t))
+            if cjk >= min_cjk and cjk >= 0.6 * len(t) and t[:80] not in seen:
                 seen.add(t[:80])
                 if len(t) > 4000:
                     cut = t.rfind("\n", 0, 4000)
@@ -144,12 +162,12 @@ def hf_rows(dataset, config, field, want, rnd):
 
 def collect_human():
     rnd = random.Random(11)
-    for ds, cfg, field, name, want in HUMAN_SOURCES:
+    for ds, cfg, field, name, want, min_cjk in HUMAN_SOURCES:
         f = OUT / f"human_{name}.jsonl"
         if len(load(f)) >= want * 0.8:
             continue
         try:
-            rows = hf_rows(ds, cfg, field, want, rnd)
+            rows = hf_rows(ds, cfg, field, want, rnd, min_cjk)
         except Exception as e:  # noqa: BLE001
             print(f"::warning title=真人中文 {name} 下载失败::{ds} {e}", flush=True)
             continue
@@ -166,8 +184,10 @@ def main():
     ap.add_argument("--skip-human", action="store_true")
     a = ap.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
-    if not a.skip_human:
+    if not a.skip_human or os.getenv("ONLY_PROVIDERS") == "human":
         collect_human()
+    if os.getenv("ONLY_PROVIDERS") == "human":
+        return
     t0, lock, ths = time.time(), threading.Lock(), []
     for name, (env, eps) in g.PROVIDERS.items():
         if os.getenv('ONLY_PROVIDERS') and name not in os.getenv('ONLY_PROVIDERS').split(','):

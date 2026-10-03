@@ -38,7 +38,7 @@ jobs:
           for v in DEEPSEEK_API_KEY KIMI_API_KEY WENXIN_API_KEY DASHSCOPE_API_KEY DOUBAO_API_KEY; do
             if [ -n "${!v}" ]; then echo "::notice title=$v::已设置"; else echo "::notice title=$v::未设置"; fi
           done
-          python -u server/tools/gen_chinese_ai.py --n-titles "${{ github.event.inputs.n_titles || '120' }}" --time-budget-min 270 ${{ github.event.inputs.providers && '--skip-human' || '' }}
+          python -u server/tools/gen_chinese_ai.py --n-titles "${{ github.event.inputs.n_titles || '120' }}" --time-budget-min 270 ${{ (github.event.inputs.providers && github.event.inputs.providers != 'human') && '--skip-human' || '' }}
       - name: 提交
         if: always()
         run: |
