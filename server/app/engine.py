@@ -509,7 +509,8 @@ class Engine:
                     if results[i].get("classifier_zh2") is not None]
             if len(vals) < 2 or sum(n for _, n in vals) < 400:
                 continue
-            med = _wmedian(vals)
+            # 只有两段时取较低的一段（加权中位数会被较长的那一段决定，真人文章偶有一段得分偏高）
+            med = min(v for v, _ in vals) if len(vals) == 2 else _wmedian(vals)
             if med is not None and med >= config.ZH2_DOC_THRESHOLD:
                 zh2_groups.add((blk, reg))
                 zh2_ai.update(i for i in idxs if smoothed.get(i) is not None

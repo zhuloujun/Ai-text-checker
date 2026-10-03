@@ -95,7 +95,8 @@ SMOOTHING = float(os.getenv("SMOOTHING", "0.3") or 0.3)
 # 未被判为 AI 的最高 0.79；DeepSeek / 文心 24 篇中文论文全部 ≥ 0.99，Kimi k3 6 篇里 5 篇 0.89–0.99，Claude 论文 0.90。
 ZH_DOC_THRESHOLD = float(os.getenv("ZH_DOC_THRESHOLD", "0.88") or 0.88)
 # 中文第二分类器整篇判断：同一篇中文作品各段得分按字数加权的中位数达到此值，本篇未过阈值的段落计为"中度疑似（整篇判断）"。
-# 依据见 Release 里的 training_result.json（没参与训练的真人文档整篇中位数最高值 + 余量）。
+# 依据（chinese-classifier-v1，2026-10-03）：没参与训练的真人文档（文学散文、高考现代文、C3、知乎、网文、HC3）整篇中位数最高 0.54，
+# 用户的真人文章《背影》《草原》《废墟》《长征》约 0.05；五家国产模型 + Claude / ChatGPT / Gemini 写的文档整篇约 0.95。
 ZH2_DOC_THRESHOLD = float(os.getenv("ZH2_DOC_THRESHOLD", "0.7") or 0.7)
 EN_PAPER_DOC_THRESHOLD = float(os.getenv("EN_PAPER_DOC_THRESHOLD", "0.85") or 0.85)   # 英文论文整篇判断阈值（第二分类器中位数）
 WORK_MAJORITY = float(os.getenv("WORK_MAJORITY", "0.6") or 0.6)   # 同篇已判 AI 的文字占比达到此值，接近阈值的段落按整篇计入
