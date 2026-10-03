@@ -59,7 +59,7 @@ def clean(t: str) -> str:
 
 
 def load(f: Path):
-    return [json.loads(l) for l in f.read_text("utf-8").splitlines() if l.strip()] if f.exists() else []
+    return [json.loads(l) for l in f.read_text("utf-8").split("\n") if l.strip()] if f.exists() else []
 
 
 def run(name, key, endpoints, n, t0, budget, lock):

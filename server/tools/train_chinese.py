@@ -47,7 +47,7 @@ def _wmedian(vals):
 
 
 def load_jsonl(f: Path) -> list[dict]:
-    return [json.loads(l) for l in f.read_text("utf-8").splitlines() if l.strip()] if f.exists() else []
+    return [json.loads(l) for l in f.read_text("utf-8").split("\n") if l.strip()] if f.exists() else []
 
 
 def segments(text: str) -> list[tuple[str, int]]:
