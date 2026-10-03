@@ -871,3 +871,25 @@ def test_chinese_famous_work_guard(client, monkeypatch):
     monkeypatch.setattr(config, "ZH_DOC_THRESHOLD", 0.5)          # 整篇像 AI（中位数 0.9 ≥ 0.5）时不保护
     res = client.post("/v1/detect", json={"text": doc + "。", "wait": True}, headers=h).json()["result"]
     assert res["summary"]["ai_rate"] > 0
+
+
+def test_numbered_collection_and_paper_subheadings():
+    """文集里的编号标题（"1. 天坛…""4. Hawaii"）各成一篇；论文里不带编号的英文小标题不另起一篇；中文短标题"老农的回忆"另起一篇。"""
+    zh = "北京的天坛，不像故宫那样把权力铺陈得满院皆是。它更像一个把人间声音压低的地方。走进祈年门，古柏一层层把尘嚣挡在外面。" * 2
+    en = ("The air in Hawaii is warm and heavy. It comes off the sea and moves through the trees without hurry. "
+          "The palms stand tall and lean a little, as if they have listened to the wind for a long time. ") * 2
+    text = ("1. Prevention and Treatment of Rheumatoid Arthritis\nAbstract\n" + en + "\nIntroduction\n" + en +
+            "\nRisk Factors and Prevention\n" + en + "\nReferences\nSmolen JS. Rheumatoid arthritis. Lancet. 2016;388:2023-2038.\n"
+            "2. 泰山：石阶上的中国\n" + zh + "\n3. Honor, Friendship, and Historical Play in The Three Musketeers\n" + en +
+            "\n敦煌\n" + zh + "\n老农的回忆\n人都说，人老了爱做梦。我偏不做梦，一闭眼，就是田。\n" + zh +
+            "\nThe Old Man and His Dog\n" + en + "\n1. 天坛：圆丘上的沉默\n" + zh + "\n2. 海边旧事\n" + zh + "\n3. The Merchant and the Godfather\n" + en +
+            "\n4. Hawaii\n" + en)
+    segs = segment_text(text)
+    titles = []
+    for s in segs:
+        if s.kind == "body" and (not titles or titles[-1][0] != s.block):
+            titles.append((s.block, s.title))
+    assert [t for _, t in titles] == [
+        "1. Prevention and Treatment of Rheumatoid Arthritis", "2. 泰山：石阶上的中国",
+        "3. Honor, Friendship, and Historical Play in The Three Musketeers", "敦煌", "老农的回忆", "The Old Man and His Dog",
+        "1. 天坛：圆丘上的沉默", "2. 海边旧事", "3. The Merchant and the Godfather", "4. Hawaii"], titles

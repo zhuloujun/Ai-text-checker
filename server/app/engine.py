@@ -485,7 +485,7 @@ class Engine:
         # 7) 中文名篇 / 孤立段落保护：
         #    a) 本篇有"名篇特征"（某段困惑度很低、波动很大，或已有段落被认作名篇原文），且整篇分类器中位数 < ZH_DOC_THRESHOLD：
         #       本篇所有过线段落都不计入（老舍《草原》这类课文，部分句子被模型背过、个别段落分类器也误判）。
-        #    b) 整篇像人写（分类器中位数 < 0.5），过线段落合计不足本篇 ISOLATED_MAX_SHARE、且都未达"高度疑似"：不计入。
+        #    b) 整篇像人写（分类器中位数 < 0.5），过线段落合计不足本篇 ISOLATED_MAX_SHARE、且都只是"轻度疑似"（< 0.65）：不计入（豆包《桂林山水》里 74% 的中度段落仍计入）。
         #    两条都标"接近阈值"供复核；整篇像 AI 的作品（国产模型论文中位数几乎都 ≥ 0.99）不受影响。
         famous_blocks = {s.block for s in segs if s.kind == "quotation" and any("名篇" in n for n in s.notes)}
         for (blk, reg), idxs in groups.items():
@@ -507,7 +507,7 @@ class Engine:
                 famous_like.update(over)
                 continue
             tot = sum(len(segs_by_idx[i].text) for i in idxs)
-            if (len(idxs) >= 3 and med < 0.5 and all(smoothed[i] < scoring.LEVELS[0][2] for i in over)
+            if (len(idxs) >= 3 and med < 0.5 and all(smoothed[i] < scoring.LEVELS[1][2] for i in over)
                     and sum(len(segs_by_idx[i].text) for i in over) < config.ISOLATED_MAX_SHARE * tot):
                 zh_human_work.update(over)
                 isolated.update(over)
@@ -610,7 +610,7 @@ class Engine:
             notes.append(f"有 {len(famous_like)} 段中文所在文章带有公开名篇的特征（语言模型对其中部分句子几乎逐字复现，"
                          "如课文、名家散文），且整篇不像 AI 写作，这些段落未计入 AI 率，标为“接近阈值”供复核。")
         if isolated:
-            notes.append(f"有 {len(isolated)} 段中文单看过了阈值，但所在文章整体像人写、过线文字不足四分之一且未达高度疑似"
+            notes.append(f"有 {len(isolated)} 段中文单看过了阈值，但所在文章整体像人写、过线文字不足四分之一且只是轻度疑似"
                          "（孤立段落误判较多，参照 Turnitin 对低占比结果的处理），未计入 AI 率，标为“接近阈值”供复核。")
         rest = zh_human_work - famous_like - isolated
         if rest:

@@ -256,12 +256,19 @@ def segment_text(text: str, exclude_references: bool = True, flag_quotations: bo
     pos = 0
     block = 0
     pending_break = False
+    new_block_pending = False
     # 论文题目：下一行就是"摘要 / Abstract"的短行（中文长题目没有书名号、超过 16 字也能认出来）
     lines_all = [l.strip() for l in text.splitlines()]
     nonempty = [l for l in lines_all if l]
     paper_titles = {a for a, b in zip(nonempty, nonempty[1:])
-                    if _ABSTRACT_HEAD.match(b) and 4 <= len(a) <= 160 and not is_section_heading(a)
-                    and not re.search(r"[。！？!?；;，,]$", a)}
+                    if _ABSTRACT_HEAD.match(b) and 4 <= len(a) <= 160 and not _ABSTRACT_HEAD.match(a)
+                    and not _SECTION_NAMES.match(a) and not re.search(r"[。！？!?；;，,]$", a)}
+    # 中文短标题（"老农的回忆"）：上一行以句末标点结束、本行 2–16 个汉字且无标点、下一行是正文长句
+    for prev, a, b in zip(nonempty, nonempty[1:], nonempty[2:]):
+        if (re.fullmatch(r"[《]?[\u4e00-\u9fff]{2,16}[》]?", a) and re.search(r"[。！？!?”」…]$", prev)
+                and len(b) >= 15 and re.search(r"[。！？，]", b) and not is_section_heading(a)
+                and not _SECTION_NAMES.match(a) and not _KEYWORDS_LINE.match(a)):
+            paper_titles.add(a)
     # 中文之后紧跟的短英文标题（"Returning Home"）：1–4 个首字母大写的词、下一行是英文长段落、上一行是中文
     for prev, a, b in zip(nonempty, nonempty[1:], nonempty[2:]):
         words = re.findall(r"[A-Za-z][A-Za-z'’\-]*", a)
@@ -271,6 +278,9 @@ def segment_text(text: str, exclude_references: bool = True, flag_quotations: bo
                 and not _EN_TITLE_SKIP.match(a)):
             paper_titles.add(a)
 
+    work_heads: set = set()          # 文集里带编号的作品标题（"1. 天坛：圆丘上的沉默""4. Hawaii"）
+    blk_paper, blk_numbered = False, False
+
     def flush(kind_override=None):
         nonlocal buf
         if not buf.strip():
@@ -279,7 +289,8 @@ def segment_text(text: str, exclude_references: bool = True, flag_quotations: bo
         reg = detect_register(buf)
         tgt = target_chars(reg)
         first = buf.strip().splitlines()[0].strip()
-        title = first if (first in paper_titles or is_title(first)) and not is_section_heading(first) else ""
+        title = first if (first in paper_titles or first in work_heads
+                          or (is_title(first) and not is_section_heading(first))) else ""
         if reg == "zh_poetry" or len(buf) <= tgt * 1.5:
             pieces = [buf]
         else:
@@ -319,6 +330,8 @@ def segment_text(text: str, exclude_references: bool = True, flag_quotations: bo
             flush("reference")
             in_refs = False
             block += 1
+            new_block_pending = True
+            blk_paper, blk_numbered = False, False
             pending_break = False
             if carry_text and not _REF_HEAD.match(carry_text):
                 buf_start = line_start - len(carry_text) - 1
@@ -335,7 +348,24 @@ def segment_text(text: str, exclude_references: bool = True, flag_quotations: bo
                 pending_break = True
             continue
         section = is_section_heading(stripped)
-        title = (stripped in paper_titles or is_title(stripped)) and not section
+        title = stripped in paper_titles or (is_title(stripped) and not section)
+        block_before = block
+        # 论文内部不带编号的英文小标题（"Risk Factors and Prevention"）是章节，不是新作品
+        if title and blk_paper and stripped not in paper_titles and not _CJK.search(stripped):
+            title, section = False, True
+        # 文集里带编号的作品标题：文体与上一篇不同（中英切换），或当前这篇不是论文、且它自己的标题也带编号
+        top = (bool(re.match(r"^\d+\s*[.、．]\s*\S", stripped)) and not re.match(r"^\d+\.\d", stripped)
+               and len(stripped) <= 90 and not _SECTION_NAMES.match(re.sub(r"^\d+\s*[.、．]\s*", "", stripped)))
+        if top and not title and new_block_pending:
+            section, title = False, True          # 参考文献之后紧跟的编号标题，就是下一篇的题目
+            work_heads.add(stripped)
+        elif top and not title and (buf.strip() or segments):
+            h_reg = "zh" if _CJK.search(stripped) else "en"
+            prev_text = buf if buf.strip() else segments[-1].text
+            cur = "zh" if len(_CJK.findall(prev_text)) * 2 > len(_LATIN.findall(prev_text)) else "en"
+            if h_reg != cur or (not blk_paper and blk_numbered):
+                section, title = False, True
+                work_heads.add(stripped)
         if buf.strip():
             reg = detect_register(buf)
             if title and not (buf.strip() and is_title(buf.strip().splitlines()[-1])):
@@ -348,8 +378,13 @@ def segment_text(text: str, exclude_references: bool = True, flag_quotations: bo
             elif (pending_break or section) and len(buf) >= flush_chars(reg):
                 # 章节标题相当于一次段落分隔：窗口够长就另起一段，否则与下一节合并（仍属同一篇作品）
                 flush()
-        elif title and segments:
+        elif title and segments and not new_block_pending:
             block += 1
+        was_pending, new_block_pending = new_block_pending, False
+        if block != block_before or was_pending or (not segments and not buf.strip()):
+            blk_paper, blk_numbered = False, bool(title and top)
+        if _ABSTRACT_HEAD.match(stripped) or _KEYWORDS_LINE.match(stripped):
+            blk_paper = True
         pending_break = False
         if not buf:
             buf_start = line_start
