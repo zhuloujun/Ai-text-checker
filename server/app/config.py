@@ -36,6 +36,10 @@ EN_CLS_MAX_TOKENS = _int("EN_CLS_MAX_TOKENS", 512)
 # 发布在本仓库 Release english-classifier-v1）。与 desklib（主要见过 GPT、LLaMA 等国外模型）互补。填本地目录；留空则不用。
 EN2_CLASSIFIER_MODEL = os.getenv("EN2_CLASSIFIER_MODEL", "")
 EN2_CLASSIFIER_ID = os.getenv("EN2_CLASSIFIER_ID", "english-classifier-v3")
+# 中文第二分类器（tools/train_chinese.py 训练）：专门识别新一代国产大模型（DeepSeek / Kimi / 文心 / 千问 / 豆包）的中文，
+# 尤其是散文、游记、回忆类文学文字。只用于"整篇判断"（不参与逐段校准）。
+ZH2_CLASSIFIER_MODEL = os.getenv("ZH2_CLASSIFIER_MODEL", "")
+ZH2_CLASSIFIER_ID = os.getenv("ZH2_CLASSIFIER_ID", "chinese-classifier-v1")
 # 诗词专用分类器（tools/train_poetry.py 在 ChangAn 上微调，发布在本仓库 Release）。填本地目录；留空则诗词用通用中文分类器。
 POETRY_CLASSIFIER_MODEL = os.getenv("POETRY_CLASSIFIER_MODEL", "")
 POETRY_CLASSIFIER_ID = os.getenv("POETRY_CLASSIFIER_ID", "poetry-classifier-v1")   # 校准参数按这个名字匹配模型
@@ -90,6 +94,9 @@ SMOOTHING = float(os.getenv("SMOOTHING", "0.3") or 0.3)
 # 本篇未过阈值的段落按"轻度疑似（整篇判断）"计入。验证（2026-10，线上服务实测）：77 篇知乎真人长回答中
 # 未被判为 AI 的最高 0.79；DeepSeek / 文心 24 篇中文论文全部 ≥ 0.99，Kimi k3 6 篇里 5 篇 0.89–0.99，Claude 论文 0.90。
 ZH_DOC_THRESHOLD = float(os.getenv("ZH_DOC_THRESHOLD", "0.88") or 0.88)
+# 中文第二分类器整篇判断：同一篇中文作品各段得分按字数加权的中位数达到此值，本篇未过阈值的段落计为"中度疑似（整篇判断）"。
+# 依据见 Release 里的 training_result.json（没参与训练的真人文档整篇中位数最高值 + 余量）。
+ZH2_DOC_THRESHOLD = float(os.getenv("ZH2_DOC_THRESHOLD", "0.7") or 0.7)
 EN_PAPER_DOC_THRESHOLD = float(os.getenv("EN_PAPER_DOC_THRESHOLD", "0.85") or 0.85)   # 英文论文整篇判断阈值（第二分类器中位数）
 WORK_MAJORITY = float(os.getenv("WORK_MAJORITY", "0.6") or 0.6)   # 同篇已判 AI 的文字占比达到此值，接近阈值的段落按整篇计入
 # 文言虚词（之乎者也矣焉哉曰…）占汉字比例超过此值的段落，视为以古籍引文为主，不计入 AI 率

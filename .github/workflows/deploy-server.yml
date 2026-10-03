@@ -86,6 +86,17 @@ jobs:
           else
             echo "内置校准的英文部分没有使用英文第二分类器，本次不部署它。"
           fi
+      - name: 取出中文第二分类器（版本见 server/app/config.py 的 ZH2_CLASSIFIER_ID）
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=$(grep -oE 'chinese-classifier-[A-Za-z0-9.-]+' server/app/config.py | head -1 || true)
+          if [ -n "$TAG" ] && gh release download "$TAG" -p chinese-classifier.tar.gz -D /tmp -R "${{ github.repository }}"; then
+            tar xzf /tmp/chinese-classifier.tar.gz -C server/
+            ls server/chinese-classifier
+          else
+            echo "::warning title=中文第二分类器::没有找到 Release $TAG，本次不部署它"
+          fi
       - name: 部署
         working-directory: server
         env:

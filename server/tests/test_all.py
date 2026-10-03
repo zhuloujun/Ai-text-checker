@@ -14,7 +14,7 @@ if not MD:
 os.environ.update({
     "OBSERVER_MODEL": f"{MD}/observer", "PERFORMER_MODEL": f"{MD}/performer", "CLASSIFIER_MODEL": f"{MD}/cls",
     "EN_CLASSIFIER_MODEL": f"{MD}/desklib_en", "POETRY_CLASSIFIER_MODEL": f"{MD}/desklib_en/../cls",
-    "EN2_CLASSIFIER_MODEL": f"{MD}/cls",
+    "EN2_CLASSIFIER_MODEL": f"{MD}/cls", "ZH2_CLASSIFIER_MODEL": f"{MD}/cls",
     "ADMIN_TOKEN": "test-admin-pw", "LM_MAX_TOKENS": "128", "CALIBRATION_FILE": "/nonexistent/cal.json",
     "MAX_TEXT_CHARS": "300000",
     "USER_CALIBRATION_FILE": f"/tmp/test_user_calibration_{os.getpid()}.json",
@@ -333,7 +333,7 @@ def test_detect_sync(client):
     assert j["status"] == "done"
     s = j["result"]["summary"]
     assert s["methods"] == {"fastdetect": True, "binoculars": True, "classifier": True, "classifier_en": True,
-                            "classifier_en2": True, "classifier_poetry": True,
+                            "classifier_en2": True, "classifier_zh2": True, "classifier_poetry": True,
                             "classifier_classical": bool(os.environ.get("CLASSICAL_CLASSIFIER_MODEL"))}
     assert 0 <= s["ai_rate"] <= 1 and s["counted_chars"] > 0
     seg = j["result"]["segments"][0]
@@ -893,3 +893,27 @@ def test_numbered_collection_and_paper_subheadings():
         "1. Prevention and Treatment of Rheumatoid Arthritis", "2. 泰山：石阶上的中国",
         "3. Honor, Friendship, and Historical Play in The Three Musketeers", "敦煌", "老农的回忆", "The Old Man and His Dog",
         "1. 天坛：圆丘上的沉默", "2. 海边旧事", "3. The Merchant and the Godfather", "4. Hawaii"], titles
+
+
+
+def test_chinese_second_classifier_whole_document(client, monkeypatch):
+    """中文第二分类器整篇中位数达到阈值时，未过阈值的段落标"中度疑似（整篇判断）"，且名篇 / 孤立段落保护不撤销它。"""
+    from app import config
+    import app.main as m
+    cal = dict(m.engine.cal)
+    profs = dict(cal.get("profiles") or {})
+    for k in ("zh", "zh_short"):
+        profs[k] = {"threshold": 0.999, "lr": None, "calibrated": True}
+    monkeypatch.setattr(m.engine, "cal", dict(cal, profiles=profs))
+    monkeypatch.setattr(m.engine, "classify", lambda texts, regs: [0.1 if r == "zh" else None for r in regs])
+    para = "到敦煌的时候，正是正午。太阳白晃晃地悬在头顶，戈壁上的空气被晒得发颤，远远看去，像有什么东西在燃烧。" * 4
+    doc = "敦煌\n" + para + "\n\n" + para.replace("敦煌", "鸣沙山") + "\n\n" + para.replace("正午", "黄昏")
+    h = {"Authorization": "Bearer " + issue(client)}
+    monkeypatch.setattr(config, "ZH2_DOC_THRESHOLD", 0.0)
+    res = client.post("/v1/detect", json={"text": doc, "wait": True}, headers=h).json()["result"]
+    zh = [s for s in res["segments"] if s["register"] == "zh" and s["kind"] == "body"]
+    assert len(zh) >= 2 and all("classifier_zh2" in s["raw"] for s in zh)
+    assert all(s["label"] == "中度疑似（整篇判断）" for s in zh), [s["label"] for s in zh]
+    monkeypatch.setattr(config, "ZH2_DOC_THRESHOLD", 1.01)
+    res = client.post("/v1/detect", json={"text": doc + "。", "wait": True}, headers=h).json()["result"]
+    assert not any(s["label"] == "中度疑似（整篇判断）" for s in res["segments"])

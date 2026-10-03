@@ -125,6 +125,7 @@ class Engine:
         self.cls_en = (make_english_classifier()
                        if (config.ENABLE_EN_CLASSIFIER and config.EN_CLASSIFIER_MODEL) else None)
         self.cls_en2 = (Classifier(config.EN2_CLASSIFIER_MODEL, 320) if config.EN2_CLASSIFIER_MODEL else None)
+        self.cls_zh2 = (Classifier(config.ZH2_CLASSIFIER_MODEL, 384) if config.ZH2_CLASSIFIER_MODEL else None)
         self.cls_poetry = (Classifier(config.POETRY_CLASSIFIER_MODEL, 128) if config.POETRY_CLASSIFIER_MODEL else None)
         self.cls_classical = (Classifier(config.CLASSICAL_CLASSIFIER_MODEL, 256) if config.CLASSICAL_CLASSIFIER_MODEL else None)
         self.loading = True
@@ -173,7 +174,7 @@ class Engine:
     def load_all(self):
         try:
             for name, det in (("语言模型", self.lm), ("中文分类器", self.cls), ("英文分类器", self.cls_en),
-                              ("英文第二分类器", self.cls_en2),
+                              ("英文第二分类器", self.cls_en2), ("中文第二分类器", self.cls_zh2),
                               ("诗词分类器", self.cls_poetry), ("文言分类器", self.cls_classical)):
                 if det is None:
                     continue
@@ -204,6 +205,7 @@ class Engine:
             "classifier": st(self.cls, config.CLASSIFIER_MODEL),
             "classifier_en": st(self.cls_en, config.EN_CLASSIFIER_MODEL),
             "classifier_en2": st(self.cls_en2, config.EN2_CLASSIFIER_ID),
+            "classifier_zh2": st(self.cls_zh2, config.ZH2_CLASSIFIER_ID),
             "classifier_poetry": st(self.cls_poetry, config.POETRY_CLASSIFIER_ID),
             "classifier_classical": st(self.cls_classical, config.CLASSICAL_CLASSIFIER_ID),
             "calibration": {"calibrated": bool(self.cal.get("calibrated")), "source": self.cal_source,
@@ -263,6 +265,17 @@ class Engine:
         idx = [i for i, r in enumerate(registers) if r == "en"]
         if idx:
             for i, p in zip(idx, self.cls_en2.predict([texts[i] for i in idx])):
+                out[i] = p
+        return out
+
+    def classify_zh2(self, texts: list[str], registers: list[str]) -> list:
+        """现代汉语段落再用中文第二分类器（见过新一代国产大模型的散文、游记、论文）打一次分。"""
+        out = [None] * len(texts)
+        if not (self.cls_zh2 and self.cls_zh2.ready):
+            return out
+        idx = [i for i, r in enumerate(registers) if r == "zh"]
+        if idx:
+            for i, p in zip(idx, self.cls_zh2.predict([texts[i] for i in idx])):
                 out[i] = p
         return out
 
@@ -340,6 +353,9 @@ class Engine:
         for s, p in zip(scored, self.classify_en2(sc_texts, sc_regs)):
             if p is not None:
                 results[s.index]["classifier_en2"] = p
+        for s, p in zip(scored, self.classify_zh2(sc_texts, sc_regs)):
+            if p is not None:
+                results[s.index]["classifier_zh2"] = p
         # 语言模型较慢：快速模式下抽样
         if self.lm and self.lm.ready:
             done = 0
@@ -482,6 +498,26 @@ class Engine:
                 zh_human_work.update(i for i in idxs if (results[i].get("classifier") or 1) < 0.5
                                      and smoothed.get(i) is not None
                                      and smoothed[i] >= float(prof[i][0].get("threshold", 0.5)))
+        # 6.5) 中文第二分类器的整篇判断：同一篇中文作品（≥ 2 段、≥ 400 字）各段得分按字数加权的中位数达到 ZH2_DOC_THRESHOLD，
+        #      本篇未过阈值的段落计为"中度疑似（整篇判断）"。针对豆包、千问等写的散文 / 游记：MPU 中文分类器和语言模型
+        #      信号都不明显，但整篇文风一致。验证见 Release 里的 training_result.json（真人文档整篇中位数远低于阈值）。
+        zh2_ai, zh2_groups = set(), set()
+        for (blk, reg), idxs in groups.items():
+            if reg != "zh":
+                continue
+            vals = [(results[i]["classifier_zh2"], len(segs_by_idx[i].text)) for i in idxs
+                    if results[i].get("classifier_zh2") is not None]
+            if len(vals) < 2 or sum(n for _, n in vals) < 400:
+                continue
+            med = _wmedian(vals)
+            if med is not None and med >= config.ZH2_DOC_THRESHOLD:
+                zh2_groups.add((blk, reg))
+                zh2_ai.update(i for i in idxs if smoothed.get(i) is not None
+                              and smoothed[i] < float(prof[i][0].get("threshold", 0.5)))
+        work_ai -= zh2_ai
+        zh_doc_ai -= zh2_ai
+        zh_human_work -= {i for g in zh2_groups for i in groups[g]}
+
         # 7) 中文名篇 / 孤立段落保护：
         #    a) 本篇有"名篇特征"（某段困惑度很低、波动很大，或已有段落被认作名篇原文），且整篇分类器中位数 < ZH_DOC_THRESHOLD：
         #       本篇所有过线段落都不计入（老舍《草原》这类课文，部分句子被模型背过、个别段落分类器也误判）。
@@ -489,7 +525,7 @@ class Engine:
         #    两条都标"接近阈值"供复核；整篇像 AI 的作品（国产模型论文中位数几乎都 ≥ 0.99）不受影响。
         famous_blocks = {s.block for s in segs if s.kind == "quotation" and any("名篇" in n for n in s.notes)}
         for (blk, reg), idxs in groups.items():
-            if reg != "zh":
+            if reg != "zh" or (blk, reg) in zh2_groups:
                 continue
             med = _wmedian([(results[i]["classifier"], len(segs_by_idx[i].text)) for i in idxs
                             if results[i].get("classifier") is not None])
@@ -527,12 +563,12 @@ class Engine:
             prob = smoothed.get(s.index) if s.counted else None
             level, label = scoring.level_of(prob, thr) if s.counted else ("none", "")
             near = bool(s.counted and prob is not None and thr - scoring.NEAR_MARGIN <= prob < thr)
-            by_work = s.index in work_ai or s.index in paper_ai
+            by_work = s.index in work_ai or s.index in paper_ai or s.index in zh2_ai
             if s.index in zh_human_work:
                 level, near = "low", True
                 label = ("接近阈值（疑似名篇，未计入）" if s.index in famous_like else
                          "接近阈值（孤立段落，未计入）" if s.index in isolated else "接近阈值（整篇像人写，未计入）")
-            elif s.index in paper_ai:
+            elif s.index in paper_ai or s.index in zh2_ai:
                 level, label, near = "mid", "中度疑似（整篇判断）", False
             elif by_work:
                 level, label, near = "light", "轻度疑似（整篇判断）", False
@@ -606,6 +642,10 @@ class Engine:
             notes.append(f"按整篇判断：这篇英文论文多数段落带有明显的大模型写作特征（整篇中位得分达到阈值），另有 {len(paper_ai)} 段"
                          "单看得分不高，也按“中度疑似（整篇判断）”计入。单段得分会随分段位置波动，整篇结论更可靠；"
                          "如果其中有你亲自写的段落，请以整篇结论为参考、逐段复核。")
+        if zh2_ai:
+            notes.append(f"按整篇判断：有 {len(zh2_ai)} 段中文单看得分未过阈值，但所在文章整体带有新一代国产大模型（豆包、千问、"
+                         "DeepSeek、Kimi、文心等）的写作风格（中文第二分类器整篇中位得分达到阈值），按“中度疑似（整篇判断）”计入。"
+                         "如果其中有你亲自写的段落，请逐段复核。")
         if famous_like:
             notes.append(f"有 {len(famous_like)} 段中文所在文章带有公开名篇的特征（语言模型对其中部分句子几乎逐字复现，"
                          "如课文、名家散文），且整篇不像 AI 写作，这些段落未计入 AI 率，标为“接近阈值”供复核。")
@@ -674,6 +714,7 @@ class Engine:
                     "classifier": bool(self.cls and self.cls.ready),
                     "classifier_en": bool(self.cls_en and self.cls_en.ready),
                     "classifier_en2": bool(self.cls_en2 and self.cls_en2.ready),
+                    "classifier_zh2": bool(self.cls_zh2 and self.cls_zh2.ready),
                     "classifier_poetry": bool(self.cls_poetry and self.cls_poetry.ready),
                     "classifier_classical": bool(self.cls_classical and self.cls_classical.ready),
                 },

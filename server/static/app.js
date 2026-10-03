@@ -61,6 +61,7 @@ async function refreshHealth(){
     parts.push(st(cl, '中文分类器'));
     if(health.classifier_en) parts.push(st(health.classifier_en, '英文分类器'));
     if(health.classifier_en2 && health.classifier_en2.enabled) parts.push(st(health.classifier_en2, '英文第二分类器（国产大模型）'));
+    if(health.classifier_zh2 && health.classifier_zh2.enabled) parts.push(st(health.classifier_zh2, '中文第二分类器（国产大模型）'));
     if(health.classifier_poetry && health.classifier_poetry.enabled) parts.push(st(health.classifier_poetry, '诗词分类器'));
     if(health.classifier_classical && health.classifier_classical.enabled) parts.push(st(health.classifier_classical, '文言分类器'));
     const pr = health.calibration.profiles;
@@ -363,6 +364,8 @@ function renderResult(res){
       raw.fastdetect!=null ? `Fast-DetectGPT 曲率 ${raw.fastdetect.toFixed(2)}` : '',
       raw.binoculars!=null ? `Binoculars 分数 ${raw.binoculars.toFixed(3)}` : '',
       raw.classifier!=null ? `分类器 ${pct(raw.classifier)}` : '',
+      raw.classifier_zh2!=null ? `国产大模型中文分类器 ${pct(raw.classifier_zh2)}` : '',
+      raw.classifier_en2!=null ? `国产大模型英文分类器 ${pct(raw.classifier_en2)}` : '',
       raw.ppl!=null ? `困惑度 ${Math.exp(raw.ppl).toFixed(1)}` : '',
       raw.lrr!=null ? `LRR ${raw.lrr.toFixed(3)}` : '',
       raw.log_rank!=null ? `平均对数名次 ${raw.log_rank.toFixed(2)}` : '',
@@ -480,7 +483,7 @@ exportBtn.addEventListener('click', ()=>{
   out += `总字数：${s.total_chars} · 计入字数：${s.counted_chars} · 未计入：${s.excluded_chars}\n`;
   out += `AI 率：${pct(s.ai_rate)}（高度 ${pct(s.high_rate)} / 中度 ${pct(s.mid_rate)} / 轻度 ${pct(s.light_rate)}${s.near_threshold_rate ? ' · 接近阈值 ' + pct(s.near_threshold_rate) : ''}） · 平均 AI 概率：${pct(s.mean_prob)} · 阈值：${pct(s.threshold)} · ${s.calibrated ? '已校准' : '未校准'}\n`;
   (s.reliability_notes || []).forEach(n=>{ out += `提示：${n}\n`; });
-  out += `方法：Fast-DetectGPT、Binoculars（Qwen2.5 打分）、MPU 中文分类器、desklib 英文分类器 + 国产大模型英文分类器（按段落文体选用）；模式：${s.mode === 'fast' ? '快速（抽样）' : '完整'}\n`;
+  out += `方法：Fast-DetectGPT、Binoculars（Qwen2.5 打分）、MPU 中文分类器 + 国产大模型中文分类器、desklib 英文分类器 + 国产大模型英文分类器（按段落文体选用）；模式：${s.mode === 'fast' ? '快速（抽样）' : '完整'}\n`;
   if(s.chars_by_register) out += `文体：${Object.entries(s.chars_by_register).map(([k,v])=>`${REG_NAME[k]||k} ${v} 字`).join('、')}\n`;
   out += `\n【说明】任何 AI 检测都有误判，本报告只供作者自查，不能作为学术不端判定依据。\n`;
   const works = lastResult.works || [];
@@ -499,6 +502,8 @@ exportBtn.addEventListener('click', ()=>{
     const sg = seg.signals || {}, r = seg.raw || {};
     const bits = [
       r.classifier!=null ? `${sigName('classifier', seg)} ${pct(r.classifier)}` : `${sigName('classifier', seg)} 未运行`,
+      r.classifier_zh2!=null ? `国产大模型中文分类器 ${pct(r.classifier_zh2)}` : '',
+      r.classifier_en2!=null ? `国产大模型英文分类器 ${pct(r.classifier_en2)}` : '',
       r.fastdetect!=null ? `Fast-DetectGPT 曲率 ${r.fastdetect.toFixed(3)}` : '',
       r.binoculars!=null ? `Binoculars ${r.binoculars.toFixed(3)}` : '',
       r.ppl!=null ? `困惑度 ${Math.exp(r.ppl).toFixed(1)}` : '',
