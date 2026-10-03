@@ -45,7 +45,9 @@ PROVIDERS = {
                                    for m in ("qwen-plus", "qwen-max", "qwen3-max", "qwen-turbo", "qwen-plus-latest")]),
     # 豆包（火山方舟）：模型名带日期版本，依次尝试；也可以在 Secrets 里设 DOUBAO_MODEL（如推理接入点 ep-xxxx）
     "doubao": ("DOUBAO_API_KEY", [("https://ark.cn-beijing.volces.com/api/v3/chat/completions", m)
-                                  for m in (os.getenv("DOUBAO_MODEL", "").strip() or "doubao-seed-1-6-250615",
+                                  for m in (os.getenv("DOUBAO_MODEL", "").strip() or "doubao-seed-2-1-pro",
+                                            "doubao-seed-2-1-pro", "doubao-seed-2-1-turbo", "doubao-seed-evolving-latest-version",
+                                            "doubao-seed-1-6-250615",
                                             "doubao-seed-1-6-flash-250615", "doubao-1-5-pro-32k-250115",
                                             "doubao-1-5-lite-32k-250115", "doubao-pro-32k-241215")]),
 }
