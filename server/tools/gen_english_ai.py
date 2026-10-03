@@ -428,14 +428,20 @@ def user_style_topics(rnd):
 
 def working_endpoints(name, key, endpoints, limit=4):
     """找出这个密钥能用的全部模型（最多 limit 个），轮流使用，覆盖同一家的不同版本（如文心 4.5 / X1）。"""
-    if name == "kimi":
+    if name in ("kimi", "doubao"):
         endpoints = discover_models(name, key, endpoints)
+        if name == "doubao":          # 只保留文字对话模型，最新的排前面
+            endpoints = sorted([e for e in endpoints if re.search(r"doubao|deepseek|kimi", e[1], re.I)
+                                and not re.search(r"seedance|seedream|vision|embedding|audio|tts|asr|1-5-ui", e[1], re.I)],
+                               key=lambda e: (os.getenv("DOUBAO_MODEL", "") != e[1], "pro" not in e[1], e[1]), reverse=False)
     ok = []
     for url, model in endpoints[:12]:
         try:
             chat_once(url, key, model, "Reply with the single word OK.", 0.1)
             ok.append((url, model))
             print(f"{name}: 可用 {model}", flush=True)
+        except urllib.error.HTTPError as e:
+            print(f"::warning title={name} 接口不可用::{model} → HTTP {e.code} {e.read()[:300]!r}", flush=True)
         except Exception as e:  # noqa: BLE001
             print(f"::warning title={name} 接口不可用::{model} → {str(e)[:150]}", flush=True)
         if len(ok) >= limit:
