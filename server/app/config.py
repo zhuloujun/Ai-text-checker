@@ -35,7 +35,7 @@ EN_CLS_MAX_TOKENS = _int("EN_CLS_MAX_TOKENS", 512)
 # 英文第二分类器（tools/train_english.py：arXiv / MAGE 人写 vs DeepSeek、文心一言等国产大模型写的英文论文段落，
 # 发布在本仓库 Release english-classifier-v1）。与 desklib（主要见过 GPT、LLaMA 等国外模型）互补。填本地目录；留空则不用。
 EN2_CLASSIFIER_MODEL = os.getenv("EN2_CLASSIFIER_MODEL", "")
-EN2_CLASSIFIER_ID = os.getenv("EN2_CLASSIFIER_ID", "english-classifier-v6")
+EN2_CLASSIFIER_ID = os.getenv("EN2_CLASSIFIER_ID", "english-classifier-v3")
 # 中文第二分类器（tools/train_chinese.py 训练）：专门识别新一代国产大模型（DeepSeek / Kimi / 文心 / 千问 / 豆包）的中文，
 # 尤其是散文、游记、回忆类文学文字。只用于"整篇判断"（不参与逐段校准）。
 ZH2_CLASSIFIER_MODEL = os.getenv("ZH2_CLASSIFIER_MODEL", "")

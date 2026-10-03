@@ -141,7 +141,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release download english-classifier-v6 -p english-classifier.tar.gz -D /tmp -R "${{ github.repository }}"; then
+          if gh release download english-classifier-v3 -p english-classifier.tar.gz -D /tmp -R "${{ github.repository }}"; then
             tar xzf /tmp/english-classifier.tar.gz -C /tmp
             ls /tmp/english-classifier
             echo "EN2_CLASSIFIER_MODEL=/tmp/english-classifier" >> "$GITHUB_ENV"
