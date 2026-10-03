@@ -43,7 +43,9 @@ ZH2_CLASSIFIER_MODEL = os.getenv("ZH2_CLASSIFIER_MODEL", "")
 # 不参与逐段校准（v5 / v6 换进逐段校准后真人误判升高，已否决）。
 EN3_CLASSIFIER_MODEL = os.getenv("EN3_CLASSIFIER_MODEL", "")
 EN3_CLASSIFIER_ID = os.getenv("EN3_CLASSIFIER_ID", "english-classifier-v7")
-EN3_DOC_THRESHOLD = float(os.getenv("EN3_DOC_THRESHOLD", "0.9") or 0.9)
+# 依据（english-classifier-v7，2026-10-04）：397 篇真人英文长文（CNN 新闻 150、Reddit 写作社区故事 150、IMDB 长影评 97）
+# 整篇中位数最高 0.855、99 分位 0.82，没有一篇 ≥ 0.9；文心清单 0.95、文心童话 0.93、千问 / 豆包故事 0.89–0.95。
+EN3_DOC_THRESHOLD = float(os.getenv("EN3_DOC_THRESHOLD", "0.92") or 0.92)
 ZH2_CLASSIFIER_ID = os.getenv("ZH2_CLASSIFIER_ID", "chinese-classifier-v2")
 # 诗词专用分类器（tools/train_poetry.py 在 ChangAn 上微调，发布在本仓库 Release）。填本地目录；留空则诗词用通用中文分类器。
 POETRY_CLASSIFIER_MODEL = os.getenv("POETRY_CLASSIFIER_MODEL", "")
